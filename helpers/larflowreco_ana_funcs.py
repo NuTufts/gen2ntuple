@@ -24,10 +24,12 @@ def parse_merged_dl_filelist( mdlfiles ):
   with open(mdlfiles,'r') as f:
     ll = f.readlines()
     for l in ll:
+      l = l.strip()
       fbase = os.path.basename(l.strip())
       tag = fbase.split("_")[-1].replace(".root","")
       filedict[tag] = l
   print("parse dlmerged input file list. number of files in samtag -> filepath dict: ",len(filedict))
+  return filedict
 
 def getFiles(mdlTag, kpsfiles, mdlfiles):
   files = []
@@ -45,7 +47,7 @@ def getFiles(mdlTag, kpsfiles, mdlfiles):
     #    break
     #dlrecofilelist.close()
     if recotag in tagdict:
-      files.append( [kpsfile,tagdict[recotag]] )
+      files.append( [ kpsfile.strip(), tagdict[recotag].strip() ] )
     else:
       print("DID NOT FIND KPS Reco File sam-tag (",recotag,") in source file tag dict (len=",len(tagdict))
   return files

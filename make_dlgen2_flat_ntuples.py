@@ -657,6 +657,7 @@ for filepair in files:
   iolcv.add_in_file(filepair[1])
   iolcv.reverse_all_products()
   iolcv.set_out_file("temp.root")
+  iolcv.addto_storeonly_list(larcv.kProductImage2D, "gobills") # trick the output file to store nothing
   iolcv.initialize()
 
   kpsfile = rt.TFile(filepair[0])
@@ -682,7 +683,8 @@ for filepair in files:
   #++++++ begin entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
   for ientry in range(ioll.get_entries()):
 
-    print("reached entry:", ientry)
+    print("====================================================",flush=True)
+    print("reached entry:", ientry,flush=True)
     sys.stdout.flush()
     
     # clear mcpixelpgraph state
@@ -695,7 +697,7 @@ for filepair in files:
       print("WARNING: EVENTS DON'T MATCH!!!")
       print("truth run/subrun/event: %i/%i/%i"%(ioll.run_id(),ioll.subrun_id(),ioll.event_id()))
       print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
-      
+      sys.exit(1)
       continue
 
     # prepare the shower-ssnet mod images
@@ -863,6 +865,7 @@ for filepair in files:
     #  trueVtxZ[0] = -999.
     #  nTruePrimParts[0] = -1
     #  nTrueSimParts[0] = -1
+    print("done with entry MC variables")
 
     fileid[0] = -1
     for tag in filepair[0].split("_"):
@@ -1041,14 +1044,18 @@ for filepair in files:
         skip = False
         n_below_threshold = 0
         cropPt = vertex.track_v[iTrk].End()
+        print(" track loop[",iTrk,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
+        print(" track loop[",iTrk,"] prong_vv made",flush=True)        
         # 2024/11/27: weaken threshold to allow for one dead-plane
         for p in range(3):
+          print("  plane[",p,"] track prong num of pixels: ",prong_vv[p].size())
           if prong_vv[p].size() < 10:
             #skip = True
             n_below_threshold += 1
         if n_below_threshold>1:
           skip = True
+        sys.stdout.flush()
           
       if skip:
         trackClassified[iTrk] = 0
@@ -1065,6 +1072,7 @@ for filepair in files:
         trackFromNeutralScore[iTrk] = -99.
         trackFromChargedScore[iTrk] = -99.
         trackRecoE[iTrk] = -1.
+        print(" track loop[",iTrk,"] skip this track prong",flush=True)
         continue
 
       with torch.no_grad():
@@ -1160,8 +1168,10 @@ for filepair in files:
 
       cropPt = vertex.shower_trunk_v[iShw].Vertex()
       #prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
+      print("  shower loop[",iShw,"] call make_cropped_initial_sparse_prong_image_reco for prong",flush=True)
+      sys.stdout.flush()      
       prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,mod_thrumu_v,shower,cropPt,10.,512,512)
-      print("  shower-prong[",iShw,"] pixels:")
+      print("  shower-prong[",iShw,"] pixels:",flush=True)
       skip = False
       nabove = 0
       for p in range(3):
@@ -1170,6 +1180,7 @@ for filepair in files:
           nabove += 1
       if nabove==0:
         skip = True
+      sys.stdout.flush()        
 
       if skip:
         showerClassified[iShw] = 0
@@ -1185,10 +1196,16 @@ for filepair in files:
         showerPrimaryScore[iShw] = -99.
         showerFromNeutralScore[iShw] = -99.
         showerFromChargedScore[iShw] = -99.
+        print("   skip the prong",flush=True)
+        sys.stdout.flush()
         continue
 
       with torch.no_grad():
-        prongImage = makeImage(prong_vv).to(args.device)
+        print("   calling makeImage(...) for prong")
+        sys.stdout.flush()                
+        prongImage = makeImage(prong_vv).to(args.device) # speed up if move to C++?
+        print("   image made: ",prongImage.shape)
+        sys.stdout.flush()        
         prongCNN_out = model(prongImage)
       showerClassified[iShw] = 1
       showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())

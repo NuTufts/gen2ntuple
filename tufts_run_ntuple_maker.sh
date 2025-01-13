@@ -34,6 +34,7 @@ mkdir -p ${logDir}
 
 echo "running array ID $SLURM_ARRAY_TASK_ID (sample output tag: $outTag) on node $SLURMD_NODENAME"
 
+#ls /cluster/tufts/wongjiradlab/
 
 source ${ubdlDir}/setenv_py3.sh
 source ${ubdlDir}/configure.sh
