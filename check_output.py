@@ -6,7 +6,9 @@ completed_arrayids = []
 incomplete_arrayids = []
 missing_arrayids = []
 
-sample="mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge"
+#sample="mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge"
+sample="mcc9_v40_bnb_nu_overlay_500k_CV_run3b"
+
 fmissing_out = open("%s_incomplete.txt"%(sample),'w')
 fcomplete_out = open("%s_complete.txt"%(sample),'w')
 

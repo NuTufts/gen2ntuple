@@ -1,5 +1,5 @@
 
-import os,sys,argparse
+import os,sys,argparse,time
 
 """
 Script to make analysis ntuples for the uboone DL-gen2 reconstruction.
@@ -13,6 +13,17 @@ When provided metadata from the simulation, it also provides "truth" information
 and it's particles.
 
 """
+from math import sqrt as sqrt
+from math import acos as acos
+from math import pi
+from math import isinf
+
+from array import array
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
 
 import ROOT as rt
 
@@ -22,22 +33,10 @@ from ublarcvapp import ublarcvapp
 from larcv import larcv
 from larflow import larflow
 
-from math import sqrt as sqrt
-from math import acos as acos
-from math import pi
-from math import isinf
-
-from array import array
-import numpy as np
-
 from event_weighting.event_weight_helper import SumPOT, Weights
 from helpers.larflowreco_ana_funcs import *
 from helpers.pionEnergyEstimator import pionRange2T
-
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
+from helpers.select_nu_vertex import select_nu_vertex, highest_kprank_with_visenergy
 
 parser = argparse.ArgumentParser("Make Flat NTuples for DLGen2 Analyses")
 parser.add_argument("-f", "--files", required=True, type=str, nargs="+", help="input kpsreco files")
@@ -65,9 +64,12 @@ reco2Tag = "merged_dlreco_"
 if args.dlana_input:
   reco2Tag = "merged_dlana_"
 
+t_start_getfiles = time.time()
 if ".root" in args.truth and len(args.files) == 1 and ".root" in args.files[0]:
+  # single reco file provided with paired single source file list
   files = [ [args.files[0], args.truth] ]
 else:
+  # filelist of reco files provided with dlmerged source file list  
   if len(args.files) == 1 and ".txt" in args.files[0]:
     larflowfiles = []
     with open(args.files[0], "r") as larflowlist:
@@ -75,8 +77,12 @@ else:
         larflowfiles.append(line.replace("\n",""))
     files = getFiles(reco2Tag, larflowfiles, args.truth)
   else:
+    # single reco file provided with dlmerged source file list
     files = getFiles(reco2Tag, args.files, args.truth)
 
+dt_getfiles = time.time()-t_start_getfiles
+print("Time to get files: ",dt_getfiles," secs")
+sys.stdout.flush()
 ALLOW_SKIPS = False
 
 # ========================================================================
@@ -365,6 +371,8 @@ if args.isMC:
   vtxDistToTrue = array('f', [0.])
 vtxScore = array('f', [0.])
 vtxFracHitsOnCosmic = array('f', [0.])
+vtxKPtype = array('i',[-1])
+vtxKPscore = array('f',[0.0])
 eventPCAxis0 = array('f', 3*[0.])
 eventPCAxis1 = array('f', 3*[0.])
 eventPCAxis2 = array('f', 3*[0.])
@@ -528,6 +536,8 @@ eventTree.Branch("vtxContainment", vtxContainment, 'vtxContainment/I')
 if args.isMC:
   eventTree.Branch("vtxDistToTrue", vtxDistToTrue, 'vtxDistToTrue/F')
 eventTree.Branch("vtxScore", vtxScore, 'vtxScore/F')
+eventTree.Branch("vtxKPtype", vtxKPtype, 'vtxKPtype/I')
+eventTree.Branch("vtxKPscore", vtxKPscore, 'vtxKPtype/F')
 eventTree.Branch("vtxFracHitsOnCosmic", vtxFracHitsOnCosmic, 'vtxFracHitsOnCosmic/F')
 eventTree.Branch("eventPCAxis0", eventPCAxis0, 'eventPCAxis0[3]/F')
 eventTree.Branch("eventPCAxis1", eventPCAxis1, 'eventPCAxis1[3]/F')
@@ -643,9 +653,10 @@ for filepair in files:
   ioll.add_in_filename(filepair[1])
   ioll.open()
 
-  iolcv = larcv.IOManager(larcv.IOManager.kREAD, "larcv", larcv.IOManager.kTickBackward)
+  iolcv = larcv.IOManager(larcv.IOManager.kBOTH, "larcv", larcv.IOManager.kTickBackward)
   iolcv.add_in_file(filepair[1])
   iolcv.reverse_all_products()
+  iolcv.set_out_file("temp.root")
   iolcv.initialize()
 
   kpsfile = rt.TFile(filepair[0])
@@ -671,8 +682,9 @@ for filepair in files:
   #++++++ begin entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
   for ientry in range(ioll.get_entries()):
 
-    #print("reached entry:", ientry)
-
+    print("reached entry:", ientry)
+    sys.stdout.flush()
+    
     # clear mcpixelpgraph state
     
     ioll.go_to(ientry)
@@ -683,8 +695,12 @@ for filepair in files:
       print("WARNING: EVENTS DON'T MATCH!!!")
       print("truth run/subrun/event: %i/%i/%i"%(ioll.run_id(),ioll.subrun_id(),ioll.event_id()))
       print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
+      
       continue
 
+    # prepare the shower-ssnet mod images
+    flowTriples.make_trackshower_images_from_sparse_uresnet_output( iolcv )
+    mod_thrumu_v = flowTriples.make_thrumu_image_with_restored_ssnet_shower_pixels( iolcv, "ubspurn_plane", "thrumu" )
 
     if args.isMC:
 
@@ -762,6 +778,7 @@ for filepair in files:
       #mcshowers = ioll.get_data(larlite.data.kMCShower, "mcreco")
       mctracks = ioll.get_data("mctrack", "mcreco")
       mcshowers = ioll.get_data("mcshower", "mcreco")
+      mcshower_detectable = ioll.get_data("mcshower","mcdetectableshower")
 
       nTrueSimParts[0] = 0
       iDS = 0
@@ -806,14 +823,22 @@ for filepair in files:
           # mcpixelpgraph
           #plane_pixel_sums_v = mcpg.getTruePhotonTrunkPlanePixelSums( mcpart.TrackID() )
           if mcpart.PdgCode()==22:
-            photon_edep_v = mcpg.getParticleEDepPos( mcpart.TrackID() )
+            
+            photon_edep_v = mcpg.getParticleEDepPos( mcpart.TrackID() )            
             trueSimPartEDepX[iDS] = photon_edep_v[0]
             trueSimPartEDepY[iDS] = photon_edep_v[1]
             trueSimPartEDepZ[iDS] = photon_edep_v[2]
+            
             photon_trunk_endpts_v = photonTruthMetrics.getPhotonTrunkLineSegment( mcpg, mcpart.TrackID() )
-            trueSimPartEndX[iDS] = photon_edep_v[0] + ( photon_trunk_endpts_v[3]-photon_trunk_endpts_v[0] )
-            trueSimPartEndY[iDS] = photon_edep_v[1] + ( photon_trunk_endpts_v[4]-photon_trunk_endpts_v[1] )
-            trueSimPartEndZ[iDS] = photon_edep_v[2] + ( photon_trunk_endpts_v[5]-photon_trunk_endpts_v[2] )
+            if photon_trunk_endpts_v.size()==6:
+              trueSimPartEndX[iDS] = photon_edep_v[0] + ( photon_trunk_endpts_v[3]-photon_trunk_endpts_v[0] )
+              trueSimPartEndY[iDS] = photon_edep_v[1] + ( photon_trunk_endpts_v[4]-photon_trunk_endpts_v[1] )
+              trueSimPartEndZ[iDS] = photon_edep_v[2] + ( photon_trunk_endpts_v[5]-photon_trunk_endpts_v[2] )
+            else:
+              trueSimPartEndX[iDS] = 0.
+              trueSimPartEndY[iDS] = 0.;
+              trueSimPartEndZ[iDS] = 0.;
+              
             photon_trunk_pixsum_v = mcpg.getTruePhotonTrunkPlanePixelSums( mcpart.TrackID() )
             if photon_trunk_pixsum_v.size()==3:
               trueSimPartPixelSumUplane[iDS] = photon_trunk_pixsum_v[0]
@@ -823,7 +848,6 @@ for filepair in files:
               trueSimPartPixelSumUplane[iDS] = 0.0
               trueSimPartPixelSumVplane[iDS] = 0.0
               trueSimPartPixelSumYplane[iDS] = 0.0
-              
             
           iDS += 1
 
@@ -886,13 +910,28 @@ for filepair in files:
 
     foundVertex[0] = 0
     vtxScore[0] = -1.
-    for vtx in kpst.nuvetoed_v:
-      if vtx.keypoint_type != 0:
-        continue
-      foundVertex[0] = 1
-      if vtx.netNuScore > vtxScore[0]:
-        vtxScore[0] = vtx.netNuScore
-        vertex = vtx
+    vtxKPtype[0] = -1
+    vtxKPscore[0] = 0.0
+    #for vtx in kpst.nuvetoed_v:
+    #  if vtx.keypoint_type != 0:
+    #    continue
+    #  foundVertex[0] = 1
+    #  if vtx.netNuScore > vtxScore[0]:
+    #    vtxScore[0] = vtx.netNuScore
+    #    vertex = vtx
+
+    #foundVertex[0], vtxScore[0], vtxIndex = select_nu_vertex( selector="highest_kprank_with_visenergy",
+    #                                                          kwargs={"nuvetoed_v":kpst.nuvetoed_v,
+    #                                                                  "nuselvar_v":kpst.nu_sel_v} )
+    foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
+                                                                           nuselvar_v=kpst.nu_sel_v,
+                                                                           min_num_showers=1)
+    if vtxIndex>=0:
+      vertex = kpst.nuvetoed_v.at(vtxIndex)
+      vtxKPtype[0] = vertex.keypoint_type
+      vtxKPscore[0] = vertex.netScore
+    else:
+      vertex = None
 
     if foundVertex[0] == 0:
       recoNuE[0] = -9.
@@ -917,6 +956,7 @@ for filepair in files:
         eventPCProjMaxDist[iPrj] = -9.
       # Stop here
       eventTree.Fill()
+      iolcv.save_entry()
       continue
 
     if args.isMC:
@@ -999,12 +1039,17 @@ for filepair in files:
       skip = True
       if goodTrack:
         skip = False
+        n_below_threshold = 0
         cropPt = vertex.track_v[iTrk].End()
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
+        # 2024/11/27: weaken threshold to allow for one dead-plane
         for p in range(3):
           if prong_vv[p].size() < 10:
-            skip = True
-            break
+            #skip = True
+            n_below_threshold += 1
+        if n_below_threshold>1:
+          skip = True
+          
       if skip:
         trackClassified[iTrk] = 0
         trackPID[iTrk] = 0
@@ -1114,12 +1159,18 @@ for filepair in files:
       recoNuE[0] += vertex.shower_plane_mom_vv[iShw][2].E()
 
       cropPt = vertex.shower_trunk_v[iShw].Vertex()
-      prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
+      #prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
+      prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,mod_thrumu_v,shower,cropPt,10.,512,512)
+      print("  shower-prong[",iShw,"] pixels:")
       skip = False
+      nabove = 0
       for p in range(3):
-        if prong_vv[p].size() < 10:
-          skip = True
-          break
+        print("     plane[",p,"] ",prong_vv[p].size())
+        if prong_vv[p].size() >= 10:
+          nabove += 1
+      if nabove==0:
+        skip = True
+
       if skip:
         showerClassified[iShw] = 0
         showerPID[iShw] = 0
@@ -1340,6 +1391,7 @@ for filepair in files:
         eventPCProjMaxDist[iPrj] = -9.
 
     eventTree.Fill()
+    iolcv.save_entry()
 
   #++++++ end entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
 
