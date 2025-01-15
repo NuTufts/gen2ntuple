@@ -26,7 +26,7 @@ SCRIPTARGS_A=$9
 SCRIPTARGS_B=${10}
 
 ubdlDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/ubdl"
-outDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/out/${sampleName}/"
+outDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/out_test/${sampleName}/"
 logDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/log/${sampleName}/"
 
 mkdir -p ${outDir}

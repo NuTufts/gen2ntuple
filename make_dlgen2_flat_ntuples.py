@@ -37,6 +37,7 @@ from event_weighting.event_weight_helper import SumPOT, Weights
 from helpers.larflowreco_ana_funcs import *
 from helpers.pionEnergyEstimator import pionRange2T
 from helpers.select_nu_vertex import select_nu_vertex, highest_kprank_with_visenergy
+from helpers.intime_vertex import get_nucandidate_intime_charge
 
 parser = argparse.ArgumentParser("Make Flat NTuples for DLGen2 Analyses")
 parser.add_argument("-f", "--files", required=True, type=str, nargs="+", help="input kpsreco files")
@@ -370,6 +371,7 @@ vtxContainment = array('i', [0])
 if args.isMC:
   vtxDistToTrue = array('f', [0.])
 vtxScore = array('f', [0.])
+vtxMaxIntimePixelSum = array('f',[0.])
 vtxFracHitsOnCosmic = array('f', [0.])
 vtxKPtype = array('i',[-1])
 vtxKPscore = array('f',[0.0])
@@ -536,6 +538,7 @@ eventTree.Branch("vtxContainment", vtxContainment, 'vtxContainment/I')
 if args.isMC:
   eventTree.Branch("vtxDistToTrue", vtxDistToTrue, 'vtxDistToTrue/F')
 eventTree.Branch("vtxScore", vtxScore, 'vtxScore/F')
+eventTree.Branch("vtxMaxIntimePixelSum", vtxMaxIntimePixelSum, "vtxMaxIntimePixelSum/F")
 eventTree.Branch("vtxKPtype", vtxKPtype, 'vtxKPtype/I')
 eventTree.Branch("vtxKPscore", vtxKPscore, 'vtxKPtype/F')
 eventTree.Branch("vtxFracHitsOnCosmic", vtxFracHitsOnCosmic, 'vtxFracHitsOnCosmic/F')
@@ -701,8 +704,12 @@ for filepair in files:
       continue
 
     # prepare the shower-ssnet mod images
+    wireplane_images_v = iolcv.get_data( larcv.kProductImage2D, "wire" )
     flowTriples.make_trackshower_images_from_sparse_uresnet_output( iolcv )
     mod_thrumu_v = flowTriples.make_thrumu_image_with_restored_ssnet_shower_pixels( iolcv, "ubspurn_plane", "thrumu" )
+    cosmictagged_pixels_v = iolcv.get_data( larcv.kProductImage2D, "thrumu" )
+    print("wireplane_images_v: ",wireplane_images_v)
+    print("cosmictagged_pixels_v: ",cosmictagged_pixels_v)
 
     if args.isMC:
 
@@ -929,6 +936,21 @@ for filepair in files:
     foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
                                                                            nuselvar_v=kpst.nu_sel_v,
                                                                            min_num_showers=1)
+
+    nvertices = kpst.nuvetoed_v.size()
+    ivtx_max_intime_sum = -1
+    max_intime_sum = 0.0
+    for ivtx in range(nvertices):
+      intime_pixelsum = get_nucandidate_intime_charge( kpst.nuvetoed_v.at(ivtx),
+                                                       wireplane_images_v,
+                                                       cosmictagged_pixels_v )
+      if intime_pixelsum>max_intime_sum:
+        max_intime_sum = intime_pixelsum
+        ivtx_max_intime_sum = ivtx
+        
+    vtxMaxIntimePixelSum[0] = max_intime_sum
+    print("vtxMaxIntimePixelSum: ",max_intime_sum)
+
     if vtxIndex>=0:
       vertex = kpst.nuvetoed_v.at(vtxIndex)
       vtxKPtype[0] = vertex.keypoint_type
