@@ -11,18 +11,46 @@ from math import pi
 import ctypes
 import os
 
+def get_kpsana_file_samhash( filename ):
+  # looks like: larflowreco_fileid0000_d9679e9b-3be3-4411-bc25-6e2cea860827_kpsrecomanagerana.root
+  bname = os.path.basename( filename.strip() )
+  samhash = bname.split("_")[-2]
+  return samhash
+
+def parse_merged_dl_filelist( mdlfiles ):
+  # we return a dict from hash to file path
+  # looks like: mcc9_v29e_dl_run3_G1_extbnb_dlana/merged_dlana_d9679e9b-3be3-4411-bc25-6e2cea860827.root
+  filedict = {}
+  with open(mdlfiles,'r') as f:
+    ll = f.readlines()
+    for l in ll:
+      l = l.strip()
+      fbase = os.path.basename(l.strip())
+      tag = fbase.split("_")[-1].replace(".root","")
+      filedict[tag] = l
+  print("parse dlmerged input file list. number of files in samtag -> filepath dict: ",len(filedict))
+  return filedict
 
 def getFiles(mdlTag, kpsfiles, mdlfiles):
   files = []
+
+  tagdict = parse_merged_dl_filelist( mdlfiles )
+  
   for kpsfile in kpsfiles:
-    dlrecofilelist = open(mdlfiles, "r")
-    for line in dlrecofilelist:
-      dlrecofile = line.replace("\n","")
-      samtag = dlrecofile[dlrecofile.find(mdlTag):].replace(mdlTag,"").replace(".root","")
-      if samtag in kpsfile:
-        files.append([kpsfile, dlrecofile])
-        break
-    dlrecofilelist.close()
+    # dlrecofilelist = open(mdlfiles, "r")
+    # for line in dlrecofilelist:
+    #   dlrecofile = line.replace("\n","")
+    #   samtag = dlrecofile[dlrecofile.find(mdlTag):].replace(mdlTag,"").replace(".root","")
+    #   if samtag in kpsfile:
+    #     files.append([kpsfile, dlrecofile])
+    #     break
+    # dlrecofilelist.close()
+    recotag = get_kpsana_file_samhash( kpsfile )
+    if recotag in tagdict:
+      files.append( [ kpsfile.strip(), tagdict[recotag].strip() ] )
+    else:
+      print("DID NOT FIND KPS Reco File sam-tag (",recotag,") in source file tag dict (len=",len(tagdict))
+      
   return files
 
 detCrds = [[0., 256.35], [-116.5, 116.5], [0, 1036.8]]

@@ -67,7 +67,7 @@ else:
 
 
 def addClusterCharge(iolcv, cluster, vertexPixels, vertexCharge, threshold):
-  evtImage2D = iolcv.get_data(larcv.kProductImage2D, "wire")
+  evtImage2D = iolcv.get_data("image2d", "wire")
   image2Dvec = evtImage2D.Image2DArray()
   clusterPixels = []
   clusterCharge = 0.
@@ -88,8 +88,8 @@ def addClusterCharge(iolcv, cluster, vertexPixels, vertexCharge, threshold):
 
 
 def getMCPartE(ioll, tid):
-  mctracks = ioll.get_data(larlite.data.kMCTrack, "mcreco")
-  mcshowers = ioll.get_data(larlite.data.kMCShower, "mcreco")
+  mctracks = ioll.get_data("mctrack","mcreco")
+  mcshowers = ioll.get_data("mcshower","mcreco")
   for mcparticles in [mctracks, mcshowers]:
     for mcpart in mcparticles:
       if mcpart.TrackID() == tid:
@@ -637,10 +637,9 @@ for filepair in files:
       print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
       continue
 
-
     if args.isMC:
 
-      mctruth = ioll.get_data(larlite.data.kMCTruth, "generator")
+      mctruth = ioll.get_data("mctruth","generator")
       nuInt = mctruth.at(0).GetNeutrino()
       lep = nuInt.Lepton()
       mcNuVertex = mcNuVertexer.getPos3DwSCE(ioll, sce)
@@ -697,8 +696,8 @@ for filepair in files:
           truePrimPartContained[iPP] = isFiducialWCSCE(sceCorrectedEndPos)
           iPP += 1
 
-      mctracks = ioll.get_data(larlite.data.kMCTrack, "mcreco")
-      mcshowers = ioll.get_data(larlite.data.kMCShower, "mcreco")
+      mctracks = ioll.get_data("mctrack","mcreco")
+      mcshowers = ioll.get_data("mcshower","mcreco")
 
       nTrueSimParts[0] = 0
       iDS = 0
@@ -857,8 +856,8 @@ for filepair in files:
     nTracks[0] = vertex.track_v.size()
     nShowers[0] = vertex.shower_v.size()
 
-    evtImage2D = iolcv.get_data(larcv.kProductImage2D, "wire")
-    csmImage2D = iolcv.get_data(larcv.kProductImage2D, "thrumu")
+    evtImage2D = iolcv.get_data("image2d","wire")
+    csmImage2D = iolcv.get_data("image2d","thrumu")
     adc_v = evtImage2D.Image2DArray()
     thrumu_v = csmImage2D.Image2DArray()
 
