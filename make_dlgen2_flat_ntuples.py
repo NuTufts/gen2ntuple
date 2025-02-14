@@ -1,6 +1,25 @@
 
 import os,sys,argparse
 
+parser = argparse.ArgumentParser("Make Flat NTuples for DLGen2 Analyses")
+parser.add_argument("-f", "--files", required=True, type=str, nargs="+", help="input kpsreco files")
+parser.add_argument("-t", "--truth", required=True, type=str, help="text file containing merged_dlreco list or merged_dlreco file for single input")
+parser.add_argument("-w", "--weightfile", type=str, default="none", help="weights file (pickled python dict)")
+parser.add_argument("-m", "--model_path", type=str, required=True, help="path to prong CNN checkpoint file")
+parser.add_argument("-d", "--device", type=str, default="cpu", help="gpu/cpu device")
+parser.add_argument("-mc", "--isMC", help="running over MC input", action="store_true")
+parser.add_argument("-ana", "--dlana_input", help="using merged_dlana input files", action="store_true")
+parser.add_argument("-o", "--outfile", type=str, default="dlgen2_flat_ntuple.root", help="output file name")
+parser.add_argument("-nkp","--noKeypoints", action="store_true", help="don't save keypoint info")
+parser.add_argument("--ignoreWeights", action="store_true", help="don't look up xsec weights, set to 1 and process all MC events (default: lookup xsec weights and exit with error if not found)")
+parser.add_argument("--skipNoWeightEvts", action="store_true", help="skip MC events if we can't find xsec weights but continue processing (default: exit with error)")
+parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
+args = parser.parse_args()
+
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
 import ROOT as rt
 
 from larlite import larlite
@@ -21,32 +40,14 @@ from event_weighting.event_weight_helper import SumPOT, Weights
 from helpers.larflowreco_ana_funcs import *
 from helpers.pionEnergyEstimator import pionRange2T
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-
-parser = argparse.ArgumentParser("Make Flat NTuples for DLGen2 Analyses")
-parser.add_argument("-f", "--files", required=True, type=str, nargs="+", help="input kpsreco files")
-parser.add_argument("-t", "--truth", required=True, type=str, help="text file containing merged_dlreco list or merged_dlreco file for single input")
-parser.add_argument("-w", "--weightfile", type=str, default="none", help="weights file (pickled python dict)")
-parser.add_argument("-m", "--model_path", type=str, required=True, help="path to prong CNN checkpoint file")
-parser.add_argument("-d", "--device", type=str, default="cpu", help="gpu/cpu device")
-parser.add_argument("-mc", "--isMC", help="running over MC input", action="store_true")
-parser.add_argument("-ana", "--dlana_input", help="using merged_dlana input files", action="store_true")
-parser.add_argument("-o", "--outfile", type=str, default="dlgen2_flat_ntuple.root", help="output file name")
-parser.add_argument("-nkp","--noKeypoints", action="store_true", help="don't save keypoint info")
-parser.add_argument("--ignoreWeights", action="store_true", help="don't look up xsec weights, set to 1 and process all MC events (default: lookup xsec weights and exit with error if not found)")
-parser.add_argument("--skipNoWeightEvts", action="store_true", help="skip MC events if we can't find xsec weights but continue processing (default: exit with error)")
-parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
-args = parser.parse_args()
 
 sys.path.append(args.model_path[:args.model_path.find("/checkpoints")])
 from models_instanceNorm_reco_2chan_quadTask import ResBlock, ResNet34
 from normalization_constants import mean, std
 
 if args.isMC and args.weightfile=="none" and not args.ignoreWeights:
-  sys.exit("Must supply weight file for MC input. Exiting...")
+  print("Must supply weight file for MC input. Exiting...")
+  os._exit(0)
 
 reco2Tag = "merged_dlreco_"
 if args.dlana_input:
@@ -237,6 +238,7 @@ flowTriples = larflow.prep.FlowTriples()
 piKEestimator = pionRange2T()
 clusterFuncs = larflow.reco.ClusterFunctions()
 
+print("LOADING RESNET MODEL")
 model = ResNet34(2, ResBlock, outputs=5)
 if "cuda" in args.device and args.multiGPU:
   model = nn.DataParallel(model)
@@ -250,6 +252,8 @@ except:
   model.module.load_state_dict(checkpoint['model_state_dict'])
 model.to(args.device)
 model.eval()
+print("LOADED MODEL")
+print(model)
 
 outRootFile = rt.TFile(args.outfile, "RECREATE")
 
@@ -584,6 +588,7 @@ if args.isMC:
 
 
 #-------- begin file loop -----------------------------------------------------#
+print("Begin File Loop over ",len(files)," files")
 for filepair in files:
 
   ioll = larlite.storage_manager(larlite.storage_manager.kREAD)
@@ -616,9 +621,11 @@ for filepair in files:
     totGoodPOT_ = totGoodPOT_ + goodPotInFile
 
   #++++++ begin entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
+  print("Begin Entry Loop over ",ioll.get_entries()," entries")
   for ientry in range(ioll.get_entries()):
 
-    #print("reached entry:", ientry)
+    if ientry>0 and ientry%10==0:
+      print("reached entry:", ientry)
 
     ioll.go_to(ientry)
     iolcv.read_entry(ientry)
@@ -1251,16 +1258,20 @@ for filepair in files:
   kpsfile.Close()
 
 #-------- end file loop -----------------------------------------------------#
-
+print("End of loop")
 
 if args.isMC:
+  print("Saving POT")
   totPOT[0] = totPOT_
   totGoodPOT[0] = totGoodPOT_
   potTree.Fill()
 
+print("Writing")
 outRootFile.cd()
 eventTree.Write("",rt.TObject.kOverwrite)
 if args.isMC:
   potTree.Write("",rt.TObject.kOverwrite)
 outRootFile.Close()
 
+print("Done")
+os._exit(0)
