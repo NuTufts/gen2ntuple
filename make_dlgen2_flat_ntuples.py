@@ -36,6 +36,7 @@ parser.add_argument("-mc", "--isMC", help="running over MC input", action="store
 parser.add_argument("-ana", "--dlana_input", help="using merged_dlana input files", action="store_true")
 parser.add_argument("-o", "--outfile", type=str, default="dlgen2_flat_ntuple.root", help="output file name")
 parser.add_argument("-nkp","--noKeypoints", action="store_true", help="don't save keypoint info")
+parser.add_argument("-tb","--tickbackward", action="store_true", help="load in larcv image with reverse time order")
 parser.add_argument("--ignoreWeights", action="store_true", help="don't look up xsec weights, set to 1 and process all MC events (default: lookup xsec weights and exit with error if not found)")
 parser.add_argument("--skipNoWeightEvts", action="store_true", help="skip MC events if we can't find xsec weights but continue processing (default: exit with error)")
 parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
@@ -590,9 +591,13 @@ for filepair in files:
   ioll.add_in_filename(filepair[1])
   ioll.open()
 
-  iolcv = larcv.IOManager(larcv.IOManager.kREAD, "larcv", larcv.IOManager.kTickBackward)
+  tickdir = larcv.IOManager.kTickForward
+  if args.tickbackward:
+    tickdir = larcv.IOManager.kTickBackward
+  iolcv = larcv.IOManager(larcv.IOManager.kREAD, "larcv", tickdir)
   iolcv.add_in_file(filepair[1])
-  iolcv.reverse_all_products()
+  if args.tickbackward:
+    iolcv.reverse_all_products()
   iolcv.initialize()
 
   kpsfile = rt.TFile(filepair[0])
