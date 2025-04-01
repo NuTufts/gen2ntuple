@@ -237,7 +237,7 @@ prongvars = larflow.reco.NuSelProngVars()
 wcoverlapvars = larflow.reco.NuSelWCTaggerOverlap()
 flowTriples = larflow.prep.FlowTriples()
 piKEestimator = pionRange2T()
-clusterFuncs = larflow.reco.ClusterFunctions()
+clusterFuncs = larflow.recoutils.ClusterFunctions()
 
 print("LOADING RESNET MODEL")
 model = ResNet34(2, ResBlock, outputs=5)
@@ -650,8 +650,10 @@ for filepair in files:
       mcNuVertex = mcNuVertexer.getPos3DwSCE(ioll, sce)
       trueVtxPos = rt.TVector3(mcNuVertex[0], mcNuVertex[1], mcNuVertex[2])
 
-      if not isFiducialWCSCE(trueVtxPos):
-        continue
+      # we should not cut the events based on true vertex
+      # removes potential backgrounds from out-of-FV events passing reco cuts
+      #if not isFiducialWCSCE(trueVtxPos):
+      #  continue
 
       if args.ignoreWeights:
         xsecWeight[0] = 1.
@@ -659,6 +661,7 @@ for filepair in files:
         try:
           xsecWeight[0] = weights.get(kpst.run, kpst.subrun, kpst.event)
           if isinf(xsecWeight[0]):
+            # is this the right procedure?
             continue
         except:
           if args.skipNoWeightEvts:
@@ -802,7 +805,7 @@ for filepair in files:
     vtxScore[0] = -1.
     for vtx in kpst.nuvetoed_v:
       if vtx.keypoint_type != 0:
-        continue
+        continue # go to next reco vertex
       foundVertex[0] = 1
       if vtx.netNuScore > vtxScore[0]:
         vtxScore[0] = vtx.netNuScore
@@ -830,7 +833,7 @@ for filepair in files:
         eventPCProjMaxGap[iPrj] = -9.
         eventPCProjMaxDist[iPrj] = -9.
       eventTree.Fill()
-      continue
+      continue # no reco vertex, move to next event
 
     if args.isMC:
       vtxDistToTrue[0] = getVertexDistance(trueVtxPos, vertex)
@@ -911,14 +914,21 @@ for filepair in files:
       
 
       skip = True
+      nplanes_below = 0
       if goodTrack:
         skip = False
         cropPt = vertex.track_v[iTrk].End()
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
         for p in range(3):
           if prong_vv[p].size() < 10:
-            skip = True
-            break
+            nplanes_below += 1
+            skip = True # Taritree: I think this is too strict for a prong. But leaving it.
+            # this strikes me as too strict
+            # maybe should be 2 out of 3 planes have low hits
+            #break
+        if nplanes_below>=2:
+          skip = True
+          
       if skip:
         trackClassified[iTrk] = 0
         trackPID[iTrk] = 0
@@ -1030,10 +1040,15 @@ for filepair in files:
       cropPt = vertex.shower_trunk_v[iShw].Vertex()
       prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
       skip = False
+      nplanes_below = 0      
       for p in range(3):
         if prong_vv[p].size() < 10:
-          skip = True
-          break
+          nplanes_below += 1          
+          skip = True # Taritree: I think this is too strict for a prong. But leaving it.
+          #break
+      if nplanes_below>=2:
+        skip = True
+        
       if skip:
         showerClassified[iShw] = 0
         showerPID[iShw] = 0
@@ -1120,7 +1135,7 @@ for filepair in files:
     #Do PCA for all hits attached to vertex
     try:
  
-      eventCluster = larflow.reco.cluster_from_larflowcluster(eventLarflowCluster)
+      eventCluster = larflow.recoutils.cluster_from_larflowcluster(eventLarflowCluster)
       for iPCA in range(3):
         eventPCAxis0[iPCA] = eventCluster.pca_axis_v[0][iPCA]
         eventPCAxis1[iPCA] = eventCluster.pca_axis_v[1][iPCA]
