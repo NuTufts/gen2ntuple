@@ -944,61 +944,68 @@ for filepair in files:
         trackFromNeutralScore[iTrk] = -99.
         trackFromChargedScore[iTrk] = -99.
         trackRecoE[iTrk] = -1.
-        continue
 
-      with torch.no_grad():
-        prongImage = makeImage(prong_vv).to(args.device)
-        prongCNN_out = model(prongImage)
-      trackClassified[iTrk] = 1
-      trackPID[iTrk] = getPID(prongCNN_out[0].argmax(1).item())
-      trackElScore[iTrk] = prongCNN_out[0][0][0].item()
-      trackPhScore[iTrk] = prongCNN_out[0][0][1].item()
-      trackMuScore[iTrk] = prongCNN_out[0][0][2].item()
-      trackPiScore[iTrk] = prongCNN_out[0][0][3].item()
-      trackPrScore[iTrk] = prongCNN_out[0][0][4].item()
-      trackComp[iTrk] = prongCNN_out[1].item()
-      trackPurity[iTrk] = prongCNN_out[2].item()
-      trackProcess[iTrk] = prongCNN_out[3].argmax(1).item()
-      trackPrimaryScore[iTrk] = prongCNN_out[3][0][0].item()
-      trackFromNeutralScore[iTrk] = prongCNN_out[3][0][1].item()
-      trackFromChargedScore[iTrk] = prongCNN_out[3][0][2].item()
-      foundEnergy = True
-      if trackMuScore[iTrk] >= trackPiScore[iTrk] and trackMuScore[iTrk] >= trackPrScore[iTrk]:
-        trackRecoE[iTrk] = vertex.track_kemu_v[iTrk]
-      elif trackPrScore[iTrk] >= trackMuScore[iTrk] and trackPrScore[iTrk] >= trackPiScore[iTrk]:
-        trackRecoE[iTrk] = vertex.track_keproton_v[iTrk]
       else:
-        try:
-          trackRecoE[iTrk] = piKEestimator.Eval(getTrackLength(vertex.track_v[iTrk]))
-        except:
-          trackRecoE[iTrk] = -1.
-          foundEnergy = False
-      if foundEnergy:
-        recoNuE[0] += trackRecoE[iTrk]
+        with torch.no_grad():
+          prongImage = makeImage(prong_vv).to(args.device)
+          prongCNN_out = model(prongImage)
+        trackClassified[iTrk] = 1
+        trackPID[iTrk] = getPID(prongCNN_out[0].argmax(1).item())
+        trackElScore[iTrk] = prongCNN_out[0][0][0].item()
+        trackPhScore[iTrk] = prongCNN_out[0][0][1].item()
+        trackMuScore[iTrk] = prongCNN_out[0][0][2].item()
+        trackPiScore[iTrk] = prongCNN_out[0][0][3].item()
+        trackPrScore[iTrk] = prongCNN_out[0][0][4].item()
+        trackComp[iTrk] = prongCNN_out[1].item()
+        trackPurity[iTrk] = prongCNN_out[2].item()
+        trackProcess[iTrk] = prongCNN_out[3].argmax(1).item()
+        trackPrimaryScore[iTrk] = prongCNN_out[3][0][0].item()
+        trackFromNeutralScore[iTrk] = prongCNN_out[3][0][1].item()
+        trackFromChargedScore[iTrk] = prongCNN_out[3][0][2].item()
+        foundEnergy = True
+        if trackMuScore[iTrk] >= trackPiScore[iTrk] and trackMuScore[iTrk] >= trackPrScore[iTrk]:
+          trackRecoE[iTrk] = vertex.track_kemu_v[iTrk]
+        elif trackPrScore[iTrk] >= trackMuScore[iTrk] and trackPrScore[iTrk] >= trackPiScore[iTrk]:
+          trackRecoE[iTrk] = vertex.track_keproton_v[iTrk]
+        else:
+          try:
+            trackRecoE[iTrk] = piKEestimator.Eval(getTrackLength(vertex.track_v[iTrk]))
+          except:
+            trackRecoE[iTrk] = -1.
+            foundEnergy = False
+        if foundEnergy:
+          recoNuE[0] += trackRecoE[iTrk]
 
       if args.isMC:
-        pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)
-        trackTruePID[iTrk] = pdg
-        trackTrueTID[iTrk] = trackid
-        trackTrueE[iTrk] = trueE
-        trackTruePurity[iTrk] = purity
-        trackTrueComp[iTrk] = completeness
         trackTrueElPurity[iTrk] = 0.
         trackTruePhPurity[iTrk] = 0.
         trackTrueMuPurity[iTrk] = 0.
         trackTruePiPurity[iTrk] = 0.
         trackTruePrPurity[iTrk] = 0.
-        for iTru, current_pdg in enumerate(allPdgs):
-          if current_pdg == 11:
-            trackTrueElPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 22:
-            trackTruePhPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 13:
-            trackTrueMuPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 211:
-            trackTruePiPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 2212:
-            trackTruePrPurity[iTrk] = allPurities[iTru]
+        if goodTrack:
+          pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)
+          trackTruePID[iTrk] = pdg
+          trackTrueTID[iTrk] = trackid
+          trackTrueE[iTrk] = trueE
+          trackTruePurity[iTrk] = purity
+          trackTrueComp[iTrk] = completeness
+          for iTru, current_pdg in enumerate(allPdgs):
+            if current_pdg == 11:
+              trackTrueElPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 22:
+              trackTruePhPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 13:
+              trackTrueMuPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 211:
+              trackTruePiPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 2212:
+              trackTruePrPurity[iTrk] = allPurities[iTru]
+        else:
+          trackTruePID[iTrk] = 0
+          trackTrueTID[iTrk] = -1
+          trackTrueE[iTrk] = -1.
+          trackTruePurity[iTrk] = 0.
+          trackTrueComp[iTrk] = 0.
       #else:
       #  trackTruePID[iTrk] = 0
       #  trackTrueTID[iTrk] = -1
@@ -1063,24 +1070,24 @@ for filepair in files:
         showerPrimaryScore[iShw] = -99.
         showerFromNeutralScore[iShw] = -99.
         showerFromChargedScore[iShw] = -99.
-        continue
 
-      with torch.no_grad():
-        prongImage = makeImage(prong_vv).to(args.device)
-        prongCNN_out = model(prongImage)
-      showerClassified[iShw] = 1
-      showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())
-      showerElScore[iShw] = prongCNN_out[0][0][0].item()
-      showerPhScore[iShw] = prongCNN_out[0][0][1].item()
-      showerMuScore[iShw] = prongCNN_out[0][0][2].item()
-      showerPiScore[iShw] = prongCNN_out[0][0][3].item()
-      showerPrScore[iShw] = prongCNN_out[0][0][4].item()
-      showerComp[iShw] = prongCNN_out[1].item()
-      showerPurity[iShw] = prongCNN_out[2].item()
-      showerProcess[iShw] = prongCNN_out[3].argmax(1).item()
-      showerPrimaryScore[iShw] = prongCNN_out[3][0][0].item()
-      showerFromNeutralScore[iShw] = prongCNN_out[3][0][1].item()
-      showerFromChargedScore[iShw] = prongCNN_out[3][0][2].item()
+      else:
+        with torch.no_grad():
+          prongImage = makeImage(prong_vv).to(args.device)
+          prongCNN_out = model(prongImage)
+        showerClassified[iShw] = 1
+        showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())
+        showerElScore[iShw] = prongCNN_out[0][0][0].item()
+        showerPhScore[iShw] = prongCNN_out[0][0][1].item()
+        showerMuScore[iShw] = prongCNN_out[0][0][2].item()
+        showerPiScore[iShw] = prongCNN_out[0][0][3].item()
+        showerPrScore[iShw] = prongCNN_out[0][0][4].item()
+        showerComp[iShw] = prongCNN_out[1].item()
+        showerPurity[iShw] = prongCNN_out[2].item()
+        showerProcess[iShw] = prongCNN_out[3].argmax(1).item()
+        showerPrimaryScore[iShw] = prongCNN_out[3][0][0].item()
+        showerFromNeutralScore[iShw] = prongCNN_out[3][0][1].item()
+        showerFromChargedScore[iShw] = prongCNN_out[3][0][2].item()
 
       if args.isMC:
         pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)
