@@ -291,6 +291,7 @@ if args.isMC:
   trueVtxX = array('f', [0.])
   trueVtxY = array('f', [0.])
   trueVtxZ = array('f', [0.])
+  trueVtxIsFiducial = array('i', [0])
   trueLepE = array('f', [0.])
   trueLepPDG = array('i', [0])
   nTruePrimParts = array('i', [0])
@@ -446,6 +447,7 @@ if args.isMC:
   eventTree.Branch("trueVtxX", trueVtxX, 'trueVtxX/F')
   eventTree.Branch("trueVtxY", trueVtxY, 'trueVtxY/F')
   eventTree.Branch("trueVtxZ", trueVtxZ, 'trueVtxZ/F')
+  eventTree.Branch("trueVtxIsFiducial", trueVtxIsFiducial, 'trueVtxIsFiducial/I')
   eventTree.Branch("trueLepE", trueLepE, 'trueLepE/F')
   eventTree.Branch("trueLepPDG", trueLepPDG, 'trueLepPDG/I')
   eventTree.Branch("nTruePrimParts", nTruePrimParts, 'nTruePrimParts/I')
@@ -661,6 +663,8 @@ for filepair in files:
       # removes potential backgrounds from out-of-FV events passing reco cuts
       #if not isFiducialWCSCE(trueVtxPos):
       #  continue
+      # add a variable for efficiency studies instead:
+      trueVtxIsFiducial[0] = int(isFiducialWCSCE(trueVtxPos))
 
       if args.ignoreWeights:
         xsecWeight[0] = 1.
