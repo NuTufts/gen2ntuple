@@ -102,8 +102,12 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
   particleDict = {}
   trackDict = {}
   totalPixI = 0.
+  noPixels = True
 
   for p in range(3):
+    if len(sparseimg_vv[p]) == 0:
+      continue
+    noPixels = False
     for pix in sparseimg_vv[p]:
       totalPixI += pix.val
       pixContents = mcpm.getPixContent(p, pix.rawRow, pix.rawCol)
@@ -116,6 +120,9 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
           trackDict[part.tid][2] += pixContents.pixI
         else:
           trackDict[part.tid] = [part.pdg, part.nodeidx, pixContents.pixI]
+
+  if noPixels or not totalPixI > 0.:
+    return 0, -1, -1., 0., 0., [], []
 
   maxPartPDG = 0 
   maxPartNID = -1
