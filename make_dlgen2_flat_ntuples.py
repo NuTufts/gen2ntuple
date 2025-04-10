@@ -15,6 +15,7 @@ parser.add_argument("-tb","--tickbackward", action="store_true", help="load in l
 parser.add_argument("--ignoreWeights", action="store_true", help="don't look up xsec weights, set to 1 and process all MC events (default: lookup xsec weights and exit with error if not found)")
 parser.add_argument("--skipNoWeightEvts", action="store_true", help="skip MC events if we can't find xsec weights but continue processing (default: exit with error)")
 parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
+parser.add_argument("--nentries","-n",default=-1,help="number of entries to run. default=-1 which will run all events")
 args = parser.parse_args()
 
 import torch
@@ -626,8 +627,13 @@ for filepair in files:
     totGoodPOT_ = totGoodPOT_ + goodPotInFile
 
   #++++++ begin entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
-  print("Begin Entry Loop over ",ioll.get_entries()," entries")
-  for ientry in range(ioll.get_entries()):
+  nentries = min(ioll.get_entries(),nKPSTEntries)
+  if args.nentries>0:
+    if args.nentries<nentries:
+      nentries = args.nentries
+  
+  print("Begin Entry Loop over ",nentries," entries")
+  for ientry in range(nentries):
 
     if ientry>0 and ientry%10==0:
       print("reached entry:", ientry)
