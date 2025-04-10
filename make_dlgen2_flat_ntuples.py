@@ -104,8 +104,12 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
   particleDict = {}
   trackDict = {}
   totalPixI = 0.
+  noPixels = True
 
   for p in range(3):
+    if len(sparseimg_vv[p]) == 0:
+      continue
+    noPixels = False
     for pix in sparseimg_vv[p]:
       totalPixI += pix.val
       pixContents = mcpm.getPixContent(p, pix.rawRow, pix.rawCol)
@@ -118,6 +122,9 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
           trackDict[part.tid][2] += pixContents.pixI
         else:
           trackDict[part.tid] = [part.pdg, part.nodeidx, pixContents.pixI]
+
+  if noPixels or not totalPixI > 0.:
+    return 0, -1, -1., 0., 0., [], []
 
   maxPartPDG = 0 
   maxPartNID = -1
@@ -162,15 +169,15 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
 
 
 def makeImage(prong_vv):
-  plane0pix_row = np.zeros(prong_vv[0].size(), dtype=int)
-  plane0pix_col = np.zeros(prong_vv[0].size(), dtype=int)
-  plane0pix_val = np.zeros(prong_vv[0].size(), dtype=float)
-  plane1pix_row = np.zeros(prong_vv[1].size(), dtype=int)
-  plane1pix_col = np.zeros(prong_vv[1].size(), dtype=int)
-  plane1pix_val = np.zeros(prong_vv[1].size(), dtype=float)
-  plane2pix_row = np.zeros(prong_vv[2].size(), dtype=int)
-  plane2pix_col = np.zeros(prong_vv[2].size(), dtype=int)
-  plane2pix_val = np.zeros(prong_vv[2].size(), dtype=float)
+  plane0pix_row = []
+  plane0pix_col = []
+  plane0pix_val = []
+  plane1pix_row = []
+  plane1pix_col = []
+  plane1pix_val = []
+  plane2pix_row = []
+  plane2pix_col = []
+  plane2pix_val = []
   raw_plane0pix_row = np.zeros(prong_vv[3].size(), dtype=int)
   raw_plane0pix_col = np.zeros(prong_vv[3].size(), dtype=int)
   raw_plane0pix_val = np.zeros(prong_vv[3].size(), dtype=float)
@@ -181,17 +188,20 @@ def makeImage(prong_vv):
   raw_plane2pix_col = np.zeros(prong_vv[5].size(), dtype=int)
   raw_plane2pix_val = np.zeros(prong_vv[5].size(), dtype=float)
   for i, pix in enumerate(prong_vv[0]):
-    plane0pix_row[i] = pix.row
-    plane0pix_col[i] = pix.col
-    plane0pix_val[i] = pix.val
+    if pix.inCrop:
+      plane0pix_row.append(pix.row)
+      plane0pix_col.append(pix.col)
+      plane0pix_val.append(pix.val)
   for i, pix in enumerate(prong_vv[1]):
-    plane1pix_row[i] = pix.row
-    plane1pix_col[i] = pix.col
-    plane1pix_val[i] = pix.val
+    if pix.inCrop:
+      plane1pix_row.append(pix.row)
+      plane1pix_col.append(pix.col)
+      plane1pix_val.append(pix.val)
   for i, pix in enumerate(prong_vv[2]):
-    plane2pix_row[i] = pix.row
-    plane2pix_col[i] = pix.col
-    plane2pix_val[i] = pix.val
+    if pix.inCrop:
+      plane2pix_row.append(pix.row)
+      plane2pix_col.append(pix.col)
+      plane2pix_val.append(pix.val)
   for i, pix in enumerate(prong_vv[3]):
     raw_plane0pix_row[i] = pix.row
     raw_plane0pix_col[i] = pix.col
@@ -204,6 +214,15 @@ def makeImage(prong_vv):
     raw_plane2pix_row[i] = pix.row
     raw_plane2pix_col[i] = pix.col
     raw_plane2pix_val[i] = pix.val
+  plane0pix_row = np.array(plane0pix_row, dtype=int)
+  plane0pix_col = np.array(plane0pix_col, dtype=int)
+  plane0pix_val = np.array(plane0pix_val, dtype=float)
+  plane1pix_row = np.array(plane1pix_row, dtype=int)
+  plane1pix_col = np.array(plane1pix_col, dtype=int)
+  plane1pix_val = np.array(plane1pix_val, dtype=float)
+  plane2pix_row = np.array(plane2pix_row, dtype=int)
+  plane2pix_col = np.array(plane2pix_col, dtype=int)
+  plane2pix_val = np.array(plane2pix_val, dtype=float)
   image = np.zeros((6,512,512))
   image[0, plane0pix_row, plane0pix_col] = plane0pix_val
   image[2, plane1pix_row, plane1pix_col] = plane1pix_val
@@ -285,6 +304,7 @@ if args.isMC:
   trueVtxX = array('f', [0.])
   trueVtxY = array('f', [0.])
   trueVtxZ = array('f', [0.])
+  trueVtxIsFiducial = array('i', [0])
   trueLepE = array('f', [0.])
   trueLepPDG = array('i', [0])
   nTruePrimParts = array('i', [0])
@@ -440,6 +460,7 @@ if args.isMC:
   eventTree.Branch("trueVtxX", trueVtxX, 'trueVtxX/F')
   eventTree.Branch("trueVtxY", trueVtxY, 'trueVtxY/F')
   eventTree.Branch("trueVtxZ", trueVtxZ, 'trueVtxZ/F')
+  eventTree.Branch("trueVtxIsFiducial", trueVtxIsFiducial, 'trueVtxIsFiducial/I')
   eventTree.Branch("trueLepE", trueLepE, 'trueLepE/F')
   eventTree.Branch("trueLepPDG", trueLepPDG, 'trueLepPDG/I')
   eventTree.Branch("nTruePrimParts", nTruePrimParts, 'nTruePrimParts/I')
@@ -660,6 +681,8 @@ for filepair in files:
       # removes potential backgrounds from out-of-FV events passing reco cuts
       #if not isFiducialWCSCE(trueVtxPos):
       #  continue
+      # add a variable for efficiency studies instead:
+      trueVtxIsFiducial[0] = int(isFiducialWCSCE(trueVtxPos))
 
       if args.ignoreWeights:
         xsecWeight[0] = 1.
@@ -950,61 +973,68 @@ for filepair in files:
         trackFromNeutralScore[iTrk] = -99.
         trackFromChargedScore[iTrk] = -99.
         trackRecoE[iTrk] = -1.
-        continue
 
-      with torch.no_grad():
-        prongImage = makeImage(prong_vv).to(args.device)
-        prongCNN_out = model(prongImage)
-      trackClassified[iTrk] = 1
-      trackPID[iTrk] = getPID(prongCNN_out[0].argmax(1).item())
-      trackElScore[iTrk] = prongCNN_out[0][0][0].item()
-      trackPhScore[iTrk] = prongCNN_out[0][0][1].item()
-      trackMuScore[iTrk] = prongCNN_out[0][0][2].item()
-      trackPiScore[iTrk] = prongCNN_out[0][0][3].item()
-      trackPrScore[iTrk] = prongCNN_out[0][0][4].item()
-      trackComp[iTrk] = prongCNN_out[1].item()
-      trackPurity[iTrk] = prongCNN_out[2].item()
-      trackProcess[iTrk] = prongCNN_out[3].argmax(1).item()
-      trackPrimaryScore[iTrk] = prongCNN_out[3][0][0].item()
-      trackFromNeutralScore[iTrk] = prongCNN_out[3][0][1].item()
-      trackFromChargedScore[iTrk] = prongCNN_out[3][0][2].item()
-      foundEnergy = True
-      if trackMuScore[iTrk] >= trackPiScore[iTrk] and trackMuScore[iTrk] >= trackPrScore[iTrk]:
-        trackRecoE[iTrk] = vertex.track_kemu_v[iTrk]
-      elif trackPrScore[iTrk] >= trackMuScore[iTrk] and trackPrScore[iTrk] >= trackPiScore[iTrk]:
-        trackRecoE[iTrk] = vertex.track_keproton_v[iTrk]
       else:
-        try:
-          trackRecoE[iTrk] = piKEestimator.Eval(getTrackLength(vertex.track_v[iTrk]))
-        except:
-          trackRecoE[iTrk] = -1.
-          foundEnergy = False
-      if foundEnergy:
-        recoNuE[0] += trackRecoE[iTrk]
+        with torch.no_grad():
+          prongImage = makeImage(prong_vv).to(args.device)
+          prongCNN_out = model(prongImage)
+        trackClassified[iTrk] = 1
+        trackPID[iTrk] = getPID(prongCNN_out[0].argmax(1).item())
+        trackElScore[iTrk] = prongCNN_out[0][0][0].item()
+        trackPhScore[iTrk] = prongCNN_out[0][0][1].item()
+        trackMuScore[iTrk] = prongCNN_out[0][0][2].item()
+        trackPiScore[iTrk] = prongCNN_out[0][0][3].item()
+        trackPrScore[iTrk] = prongCNN_out[0][0][4].item()
+        trackComp[iTrk] = prongCNN_out[1].item()
+        trackPurity[iTrk] = prongCNN_out[2].item()
+        trackProcess[iTrk] = prongCNN_out[3].argmax(1).item()
+        trackPrimaryScore[iTrk] = prongCNN_out[3][0][0].item()
+        trackFromNeutralScore[iTrk] = prongCNN_out[3][0][1].item()
+        trackFromChargedScore[iTrk] = prongCNN_out[3][0][2].item()
+        foundEnergy = True
+        if trackMuScore[iTrk] >= trackPiScore[iTrk] and trackMuScore[iTrk] >= trackPrScore[iTrk]:
+          trackRecoE[iTrk] = vertex.track_kemu_v[iTrk]
+        elif trackPrScore[iTrk] >= trackMuScore[iTrk] and trackPrScore[iTrk] >= trackPiScore[iTrk]:
+          trackRecoE[iTrk] = vertex.track_keproton_v[iTrk]
+        else:
+          try:
+            trackRecoE[iTrk] = piKEestimator.Eval(getTrackLength(vertex.track_v[iTrk]))
+          except:
+            trackRecoE[iTrk] = -1.
+            foundEnergy = False
+        if foundEnergy:
+          recoNuE[0] += trackRecoE[iTrk]
 
       if args.isMC:
-        pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)
-        trackTruePID[iTrk] = pdg
-        trackTrueTID[iTrk] = trackid
-        trackTrueE[iTrk] = trueE
-        trackTruePurity[iTrk] = purity
-        trackTrueComp[iTrk] = completeness
         trackTrueElPurity[iTrk] = 0.
         trackTruePhPurity[iTrk] = 0.
         trackTrueMuPurity[iTrk] = 0.
         trackTruePiPurity[iTrk] = 0.
         trackTruePrPurity[iTrk] = 0.
-        for iTru, current_pdg in enumerate(allPdgs):
-          if current_pdg == 11:
-            trackTrueElPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 22:
-            trackTruePhPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 13:
-            trackTrueMuPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 211:
-            trackTruePiPurity[iTrk] = allPurities[iTru]
-          if current_pdg == 2212:
-            trackTruePrPurity[iTrk] = allPurities[iTru]
+        if goodTrack:
+          pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)
+          trackTruePID[iTrk] = pdg
+          trackTrueTID[iTrk] = trackid
+          trackTrueE[iTrk] = trueE
+          trackTruePurity[iTrk] = purity
+          trackTrueComp[iTrk] = completeness
+          for iTru, current_pdg in enumerate(allPdgs):
+            if current_pdg == 11:
+              trackTrueElPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 22:
+              trackTruePhPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 13:
+              trackTrueMuPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 211:
+              trackTruePiPurity[iTrk] = allPurities[iTru]
+            if current_pdg == 2212:
+              trackTruePrPurity[iTrk] = allPurities[iTru]
+        else:
+          trackTruePID[iTrk] = 0
+          trackTrueTID[iTrk] = -1
+          trackTrueE[iTrk] = -1.
+          trackTruePurity[iTrk] = 0.
+          trackTrueComp[iTrk] = 0.
       #else:
       #  trackTruePID[iTrk] = 0
       #  trackTrueTID[iTrk] = -1
@@ -1069,24 +1099,24 @@ for filepair in files:
         showerPrimaryScore[iShw] = -99.
         showerFromNeutralScore[iShw] = -99.
         showerFromChargedScore[iShw] = -99.
-        continue
 
-      with torch.no_grad():
-        prongImage = makeImage(prong_vv).to(args.device)
-        prongCNN_out = model(prongImage)
-      showerClassified[iShw] = 1
-      showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())
-      showerElScore[iShw] = prongCNN_out[0][0][0].item()
-      showerPhScore[iShw] = prongCNN_out[0][0][1].item()
-      showerMuScore[iShw] = prongCNN_out[0][0][2].item()
-      showerPiScore[iShw] = prongCNN_out[0][0][3].item()
-      showerPrScore[iShw] = prongCNN_out[0][0][4].item()
-      showerComp[iShw] = prongCNN_out[1].item()
-      showerPurity[iShw] = prongCNN_out[2].item()
-      showerProcess[iShw] = prongCNN_out[3].argmax(1).item()
-      showerPrimaryScore[iShw] = prongCNN_out[3][0][0].item()
-      showerFromNeutralScore[iShw] = prongCNN_out[3][0][1].item()
-      showerFromChargedScore[iShw] = prongCNN_out[3][0][2].item()
+      else:
+        with torch.no_grad():
+          prongImage = makeImage(prong_vv).to(args.device)
+          prongCNN_out = model(prongImage)
+        showerClassified[iShw] = 1
+        showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())
+        showerElScore[iShw] = prongCNN_out[0][0][0].item()
+        showerPhScore[iShw] = prongCNN_out[0][0][1].item()
+        showerMuScore[iShw] = prongCNN_out[0][0][2].item()
+        showerPiScore[iShw] = prongCNN_out[0][0][3].item()
+        showerPrScore[iShw] = prongCNN_out[0][0][4].item()
+        showerComp[iShw] = prongCNN_out[1].item()
+        showerPurity[iShw] = prongCNN_out[2].item()
+        showerProcess[iShw] = prongCNN_out[3].argmax(1).item()
+        showerPrimaryScore[iShw] = prongCNN_out[3][0][0].item()
+        showerFromNeutralScore[iShw] = prongCNN_out[3][0][1].item()
+        showerFromChargedScore[iShw] = prongCNN_out[3][0][2].item()
 
       if args.isMC:
         pdg, trackid, trueE, purity, completeness, allPdgs, allPurities = getMCProngParticle(prong_vv, mcpg, mcpm, adc_v, ioll)

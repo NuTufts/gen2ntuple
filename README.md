@@ -129,8 +129,8 @@ Please update this readme if you add new variables!
 
 * An entry will appear in the flat ntuple files for every input data event
 * For MC simulation, events that meet the following criteria are excluded and will not appear in these file:
-    * SCE corrected neutrino interaction vertex is outside the wire cell fiducial volume
-    * The event’s cross-section weight is unknown or infinite
+    * SCE corrected neutrino interaction vertex is outside the wire cell fiducial volume (criteria removed 04/2025)
+    * The event’s cross-section weight is unknown or infinite (should never happen once weights files are updated)
 
 ### potTree variables:
 
@@ -161,6 +161,7 @@ These variables are not included for data.
 * __trueNuMode__: integer indicating the simulated neutrino interaction mode: 0 for QE, 1 for Res, 2 for DIS, 3 for Coh, 10 for MEC.
 * __trueNuIntrxnType__: integer indicating the simulated neutrino interaction type. A list of categories corresponding to values can be found [here](https://github.com/NuTufts/larlite/blob/7aadee7f8a0c72429774578539842e8d4936d457/larlite/Base/MCConstants.h). 
 * __trueVtx{X,Y,Z}__: SCE corrected X,Y,Z coordinates (in cm) of simulated neutrino interaction vertex.
+* __trueVtxIsFiducial__: 1 if SCE corrected simulated neutrino interaction vertex is inside Wire-Cell fiducial volume, 0 otherwise.
 * __trueLepE__: true energy in GeV of primary lepton.
 * __trueLepPDG__: PDG code of simulated primary lepton.
 * __nTruePrimParts__: number of true primary particles (number of stable final state particles from the neutrino interaction that are passed to the detector simulation)
