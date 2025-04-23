@@ -1,6 +1,16 @@
+import os,sys,argparse,time
 
-import os,sys,argparse
+"""
+Script to make analysis ntuples for the uboone LANTERN reconstruction.
 
+See README.md in the repo https://github.com/NuTufts/gen2ntuple
+for definition of the different variables.
+
+It also runs the LArPID CNN to classify prongs.
+
+When provided metadata from the simulation, it also provides "truth" information about the neutrino interaction
+and it's particles.
+"""
 parser = argparse.ArgumentParser("Make Flat NTuples for DLGen2 Analyses")
 parser.add_argument("-f", "--files", required=True, type=str, nargs="+", help="input kpsreco files")
 parser.add_argument("-t", "--truth", required=True, type=str, help="text file containing merged_dlreco list or merged_dlreco file for single input")
@@ -18,10 +28,19 @@ parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
 parser.add_argument("--nentries","-n",default=-1,help="number of entries to run. default=-1 which will run all events")
 args = parser.parse_args()
 
+from math import sqrt as sqrt
+from math import acos as acos
+from math import pi
+from math import isinf
+from array import array
+
+import numpy as np
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
+
 import ROOT as rt
 
 from larlite import larlite
@@ -30,18 +49,14 @@ from ublarcvapp import ublarcvapp
 from larcv import larcv
 from larflow import larflow
 
-from math import sqrt as sqrt
-from math import acos as acos
-from math import pi
-from math import isinf
-
-from array import array
-import numpy as np
-
 from event_weighting.event_weight_helper import SumPOT, Weights
 from helpers.larflowreco_ana_funcs import *
 from helpers.pionEnergyEstimator import pionRange2T
 
+# below from tmw --------
+from helpers.select_nu_vertex import select_nu_vertex, highest_kprank_with_visenergy
+from helpers.intime_vertex import get_nucandidate_intime_charge
+# -----------------------
 
 sys.path.append(args.model_path[:args.model_path.find("/checkpoints")])
 from models_instanceNorm_reco_2chan_quadTask import ResBlock, ResNet34
@@ -55,9 +70,12 @@ reco2Tag = "merged_dlreco_"
 if args.dlana_input:
   reco2Tag = "merged_dlana_"
 
+t_start_getfiles = time.time()
 if ".root" in args.truth and len(args.files) == 1 and ".root" in args.files[0]:
+  # single reco file provided with paired single source file list
   files = [ [args.files[0], args.truth] ]
 else:
+  # filelist of reco files provided with dlmerged source file list  
   if len(args.files) == 1 and ".txt" in args.files[0]:
     larflowfiles = []
     with open(args.files[0], "r") as larflowlist:
@@ -65,8 +83,27 @@ else:
         larflowfiles.append(line.replace("\n",""))
     files = getFiles(reco2Tag, larflowfiles, args.truth)
   else:
+    # single reco file provided with dlmerged source file list
     files = getFiles(reco2Tag, args.files, args.truth)
 
+dt_getfiles = time.time()-t_start_getfiles
+print("Time to get files: ",dt_getfiles," secs")
+sys.stdout.flush()
+ALLOW_SKIPS = False
+
+# ========================================================================
+# We load the ublarcvapp::MCTools::MCPixelPGraph class, which we can use
+# to get more accurate information about the true
+# energy deposition pattern left by electron and photon showers
+# ========================================================================
+if args.isMC:
+  print("load the MCPixelPGraph: provides functions to measure visible EDep in Image")
+  from ublarcvapp import ublarcvapp
+  mcpg = ublarcvapp.mctools.MCPixelPGraph()
+  mcpg.set_cluster_neutrino_particles(True)
+  mcpg.set_adc_treename("wire")
+  mcpm = ublarcvapp.mctools.MCPixelPMap()
+  mcpm.set_adc_treename("wire")
 
 def addClusterCharge(iolcv, cluster, vertexPixels, vertexCharge, threshold):
   evtImage2D = iolcv.get_data("image2d", "wire")
@@ -90,8 +127,8 @@ def addClusterCharge(iolcv, cluster, vertexPixels, vertexCharge, threshold):
 
 
 def getMCPartE(ioll, tid):
-  mctracks = ioll.get_data("mctrack","mcreco")
-  mcshowers = ioll.get_data("mcshower","mcreco")
+  mctracks = ioll.get_data("mctrack", "mcreco")
+  mcshowers = ioll.get_data("mcshower", "mcreco")
   for mcparticles in [mctracks, mcshowers]:
     for mcpart in mcparticles:
       if mcpart.TrackID() == tid:
@@ -258,6 +295,7 @@ wcoverlapvars = larflow.reco.NuSelWCTaggerOverlap()
 flowTriples = larflow.prep.FlowTriples()
 piKEestimator = pionRange2T()
 clusterFuncs = larflow.recoutils.ClusterFunctions()
+photonTruthMetrics = larflow.reco.ShowerTruthMetricsMaker()
 
 print("LOADING RESNET MODEL")
 model = ResNet34(2, ResBlock, outputs=5)
@@ -307,6 +345,7 @@ if args.isMC:
   trueVtxIsFiducial = array('i', [0])
   trueLepE = array('f', [0.])
   trueLepPDG = array('i', [0])
+  # 'truePrim' variables relate to output from GENIE generator
   nTruePrimParts = array('i', [0])
   truePrimPartPDG = array('i', maxNParts*[0])
   truePrimPartX = array('f', maxNParts*[0.])
@@ -317,6 +356,11 @@ if args.isMC:
   truePrimPartPz = array('f', maxNParts*[0.])
   truePrimPartE = array('f', maxNParts*[0.])
   truePrimPartContained = array('i', maxNParts*[0])
+  # 'trueSim' variables relate to Geant4 particle tracking stage
+  # primaries are those that come from the GENIE generator stage
+  # exception are photons from neutral pions. Neutral pion
+  # lifetime is sort, so not in trusim variables.
+  # resulting photons are listed as secondaries in trueSim variables
   nTrueSimParts = array('i', [0])
   trueSimPartPDG = array('i', maxNParts*[0])
   trueSimPartTID = array('i', maxNParts*[0])
@@ -335,7 +379,15 @@ if args.isMC:
   trueSimPartEndX = array('f', maxNParts*[0.])
   trueSimPartEndY = array('f', maxNParts*[0.])
   trueSimPartEndZ = array('f', maxNParts*[0.])
+  trueSimPartEndPx = array('f', maxNParts*[0.])
+  trueSimPartEndPy = array('f', maxNParts*[0.])
+  trueSimPartEndPz = array('f', maxNParts*[0.])
+  trueSimPartEndE = array('f', maxNParts*[0.])
   trueSimPartContained = array('i', maxNParts*[0])
+  trueSimPartPixelSumUplane = array('f', maxNParts*[0.])
+  trueSimPartPixelSumVplane = array('f', maxNParts*[0.])
+  trueSimPartPixelSumYplane = array('f', maxNParts*[0.])
+  
 recoNuE = array('f', [0.])
 foundVertex = array('i', [0])
 vtxX = array('f', [0.])
@@ -346,7 +398,10 @@ vtxContainment = array('i', [0])
 if args.isMC:
   vtxDistToTrue = array('f', [0.])
 vtxScore = array('f', [0.])
+vtxMaxIntimePixelSum = array('f',[0.])
 vtxFracHitsOnCosmic = array('f', [0.])
+vtxKPtype = array('i',[-1])
+vtxKPscore = array('f',[0.0])
 eventPCAxis0 = array('f', 3*[0.])
 eventPCAxis1 = array('f', 3*[0.])
 eventPCAxis2 = array('f', 3*[0.])
@@ -491,7 +546,16 @@ if args.isMC:
   eventTree.Branch("trueSimPartEndX", trueSimPartEndX, 'trueSimPartEndX[nTrueSimParts]/F')
   eventTree.Branch("trueSimPartEndY", trueSimPartEndY, 'trueSimPartEndY[nTrueSimParts]/F')
   eventTree.Branch("trueSimPartEndZ", trueSimPartEndZ, 'trueSimPartEndZ[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartEndPx", trueSimPartEndPx, 'trueSimPartEndPx[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartEndPy", trueSimPartEndPy, 'trueSimPartEndPy[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartEndPz", trueSimPartEndPz, 'trueSimPartEndPz[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartEndE", trueSimPartEndE, 'trueSimPartEndE[nTrueSimParts]/F') 
+  
   eventTree.Branch("trueSimPartContained", trueSimPartContained, 'trueSimPartContained[nTrueSimParts]/I')
+  eventTree.Branch("trueSimPartPixelSumUplane", trueSimPartPixelSumUplane, 'trueSimPartPixelSumUplane[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartPixelSumVplane", trueSimPartPixelSumVplane, 'trueSimPartPixelSumVplane[nTrueSimParts]/F')
+  eventTree.Branch("trueSimPartPixelSumYplane", trueSimPartPixelSumYplane, 'trueSimPartPixelSumYplane[nTrueSimParts]/F')
+  
 eventTree.Branch("recoNuE", recoNuE, 'recoNuE/F')
 eventTree.Branch("foundVertex", foundVertex, 'foundVertex/I')
 eventTree.Branch("vtxX", vtxX, 'vtxX/F')
@@ -502,6 +566,9 @@ eventTree.Branch("vtxContainment", vtxContainment, 'vtxContainment/I')
 if args.isMC:
   eventTree.Branch("vtxDistToTrue", vtxDistToTrue, 'vtxDistToTrue/F')
 eventTree.Branch("vtxScore", vtxScore, 'vtxScore/F')
+eventTree.Branch("vtxMaxIntimePixelSum", vtxMaxIntimePixelSum, "vtxMaxIntimePixelSum/F")
+eventTree.Branch("vtxKPtype", vtxKPtype, 'vtxKPtype/I')
+eventTree.Branch("vtxKPscore", vtxKPscore, 'vtxKPtype/F')
 eventTree.Branch("vtxFracHitsOnCosmic", vtxFracHitsOnCosmic, 'vtxFracHitsOnCosmic/F')
 eventTree.Branch("eventPCAxis0", eventPCAxis0, 'eventPCAxis0[3]/F')
 eventTree.Branch("eventPCAxis1", eventPCAxis1, 'eventPCAxis1[3]/F')
@@ -621,8 +688,10 @@ for filepair in files:
   tickdir = larcv.IOManager.kTickForward
   if args.tickbackward:
     tickdir = larcv.IOManager.kTickBackward
-  iolcv = larcv.IOManager(larcv.IOManager.kREAD, "larcv", tickdir)
+  iolcv = larcv.IOManager(larcv.IOManager.kBOTH, "larcv", tickdir)
   iolcv.add_in_file(filepair[1])
+  iolcv.set_out_file("temp.root")
+  iolcv.addto_storeonly_list(larcv.kProductImage2D, "gobills") # trick the output file to store nothing
   if args.tickbackward:
     iolcv.reverse_all_products()
   iolcv.initialize()
@@ -657,7 +726,9 @@ for filepair in files:
   for ientry in range(nentries):
 
     if ientry>0 and ientry%10==0:
-      print("reached entry:", ientry)
+      print("====================================================",flush=True)
+      print("reached entry:", ientry,flush=True)
+      sys.stdout.flush()
 
     ioll.go_to(ientry)
     iolcv.read_entry(ientry)
@@ -667,11 +738,38 @@ for filepair in files:
       print("WARNING: EVENTS DON'T MATCH!!!")
       print("truth run/subrun/event: %i/%i/%i"%(ioll.run_id(),ioll.subrun_id(),ioll.event_id()))
       print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
+      sys.exit(1)
       continue
+
+    # prepare the shower-ssnet mod images
+    wireplane_images_v = iolcv.get_data( larcv.kProductImage2D, "wire" )
+    flowTriples.make_trackshower_images_from_sparse_uresnet_output( iolcv ) ## need to add to larflow/
+    mod_thrumu_v = flowTriples.make_thrumu_image_with_restored_ssnet_shower_pixels( iolcv, "ubspurn_plane", "thrumu" ) ## need to add larflow/
+    cosmictagged_pixels_v = iolcv.get_data( larcv.kProductImage2D, "thrumu" )
+    print("wireplane_images_v: ",wireplane_images_v)
+    print("cosmictagged_pixels_v: ",cosmictagged_pixels_v)
 
     if args.isMC:
 
-      mctruth = ioll.get_data("mctruth","generator")
+      # ========================================================================
+      # We load the ublarcvapp::MCTools::MCPixelPGraph class, which we can use
+      # to get more accurate information about the true
+      # energy deposition pattern left by electron and photon showers
+      # ========================================================================
+      if args.isMC:
+        print("load the MCPixelPGraph: provides functions to measure visible EDep in Image")
+
+      # we build a graph of particles using the truth
+      # we also attempt to associate  true particle with the pixels in each plane
+      # where it deposited energy (or had a descendent who did).
+      mcpg.clear()      
+      mcpg.buildgraph( iolcv, ioll )
+      
+      mcpm = ublarcvapp.mctools.MCPixelPMap()
+      mcpm.set_adc_treename("wire")
+      mcpm.buildmap(iolcv, mcpg)
+      
+      mctruth = ioll.get_data("mctruth", "generator")      
       nuInt = mctruth.at(0).GetNeutrino()
       lep = nuInt.Lepton()
       mcNuVertex = mcNuVertexer.getPos3DwSCE(ioll, sce)
@@ -733,8 +831,9 @@ for filepair in files:
           truePrimPartContained[iPP] = isFiducialWCSCE(sceCorrectedEndPos)
           iPP += 1
 
-      mctracks = ioll.get_data("mctrack","mcreco")
-      mcshowers = ioll.get_data("mcshower","mcreco")
+      mctracks = ioll.get_data("mctrack", "mcreco")
+      mcshowers = ioll.get_data("mcshower", "mcreco")
+      mcshower_detectable = ioll.get_data("mcshower","mcdetectableshower")
 
       nTrueSimParts[0] = 0
       iDS = 0
@@ -767,10 +866,44 @@ for filepair in files:
           trueSimPartPy[iDS] = mcpart.Start().Py()
           trueSimPartPz[iDS] = mcpart.Start().Pz()
           trueSimPartE[iDS] = mcpart.Start().E()
+          trueSimPartEndPx[iDS] = mcpart.End().Px()
+          trueSimPartEndPy[iDS] = mcpart.End().Py()
+          trueSimPartEndPz[iDS] = mcpart.End().Pz()
+          trueSimPartEndE[iDS] = mcpart.End().E()
           trueSimPartEndX[iDS] = sceCorrectedEndPos.X()
           trueSimPartEndY[iDS] = sceCorrectedEndPos.Y()
           trueSimPartEndZ[iDS] = sceCorrectedEndPos.Z()
           trueSimPartContained[iDS] = isFiducialWCSCE(sceCorrectedEndPos)
+
+          # mcpixelpgraph
+          #plane_pixel_sums_v = mcpg.getTruePhotonTrunkPlanePixelSums( mcpart.TrackID() )
+          if mcpart.PdgCode()==22:
+            
+            photon_edep_v = mcpg.getParticleEDepPos( mcpart.TrackID() )            
+            trueSimPartEDepX[iDS] = photon_edep_v[0]
+            trueSimPartEDepY[iDS] = photon_edep_v[1]
+            trueSimPartEDepZ[iDS] = photon_edep_v[2]
+            
+            photon_trunk_endpts_v = photonTruthMetrics.getPhotonTrunkLineSegment( mcpg, mcpart.TrackID() )
+            if photon_trunk_endpts_v.size()==6:
+              trueSimPartEndX[iDS] = photon_edep_v[0] + ( photon_trunk_endpts_v[3]-photon_trunk_endpts_v[0] )
+              trueSimPartEndY[iDS] = photon_edep_v[1] + ( photon_trunk_endpts_v[4]-photon_trunk_endpts_v[1] )
+              trueSimPartEndZ[iDS] = photon_edep_v[2] + ( photon_trunk_endpts_v[5]-photon_trunk_endpts_v[2] )
+            else:
+              trueSimPartEndX[iDS] = 0.
+              trueSimPartEndY[iDS] = 0.;
+              trueSimPartEndZ[iDS] = 0.;
+              
+            photon_trunk_pixsum_v = mcpg.getTruePhotonTrunkPlanePixelSums( mcpart.TrackID() )
+            if photon_trunk_pixsum_v.size()==3:
+              trueSimPartPixelSumUplane[iDS] = photon_trunk_pixsum_v[0]
+              trueSimPartPixelSumVplane[iDS] = photon_trunk_pixsum_v[1]
+              trueSimPartPixelSumYplane[iDS] = photon_trunk_pixsum_v[2]
+            else:
+              trueSimPartPixelSumUplane[iDS] = 0.0
+              trueSimPartPixelSumVplane[iDS] = 0.0
+              trueSimPartPixelSumYplane[iDS] = 0.0
+            
           iDS += 1
 
     #else: #from "if args.isMC"
@@ -785,6 +918,7 @@ for filepair in files:
     #  trueVtxZ[0] = -999.
     #  nTruePrimParts[0] = -1
     #  nTrueSimParts[0] = -1
+    print("done with entry MC variables")
 
     fileid[0] = -1
     for tag in filepair[0].split("_"):
@@ -832,13 +966,44 @@ for filepair in files:
 
     foundVertex[0] = 0
     vtxScore[0] = -1.
-    for vtx in kpst.nuvetoed_v:
+    vtxKPtype[0] = -1
+    vtxKPscore[0] = 0.0
+    vtxMaxIntimePixelSum[0] = -1.0
+    nvertices = kpst.nuvetoed_v.size()
+    vtxIndex = -1
+    ivtx_max_intime_sum = -1
+    max_intime_sum = 0.0
+    vertex = None
+    
+    # Used in tmw_photon_edep_version
+    ##foundVertex[0], vtxScore[0], vtxIndex = select_nu_vertex( selector="highest_kprank_with_visenergy",
+    ##                                                          kwargs={"nuvetoed_v":kpst.nuvetoed_v,
+    ##                                                                  "nuselvar_v":kpst.nu_sel_v} )
+    #foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
+    #                                                                       nuselvar_v=kpst.nu_sel_v,
+    #                                                                       min_num_showers=1)
+
+    # in this version, use netNuScore and only nu keypoints
+    for ivtx in range(nvertices):
+      vtx = kpst.nuvetoed_v.at(ivtx)
       if vtx.keypoint_type != 0:
         continue # go to next reco vertex
       foundVertex[0] = 1
       if vtx.netNuScore > vtxScore[0]:
         vtxScore[0] = vtx.netNuScore
+        vtxKPtype[0]  = vertex.keypoint_type
+        vtxKPscore[0] = vertex.netScore        
         vertex = vtx
+        vtxIndex = ivtx
+
+        intime_pixelsum = get_nucandidate_intime_charge( vtx,
+                                                         wireplane_images_v,
+                                                         cosmictagged_pixels_v )
+        max_intime_sum = intime_pixelsum
+        ivtx_max_intime_sum = ivtx
+        
+    vtxMaxIntimePixelSum[0] = max_intime_sum
+    print("vtxMaxIntimePixelSum: ",max_intime_sum)
 
     if foundVertex[0] == 0:
       recoNuE[0] = -9.
@@ -861,19 +1026,20 @@ for filepair in files:
       for iPrj in range(5):
         eventPCProjMaxGap[iPrj] = -9.
         eventPCProjMaxDist[iPrj] = -9.
+      # Stop here
+      # no reco vertex, move to next event      
       eventTree.Fill()
-      continue # no reco vertex, move to next event
+      iolcv.save_entry()
+      continue
 
     if args.isMC:
-      vtxDistToTrue[0] = getVertexDistance(trueVtxPos, vertex)
+      # build up information to tag true shower keypoints
       mcpg = ublarcvapp.mctools.MCPixelPGraph()
       mcpg.set_adc_treename("wire")
       mcpg.buildgraph(iolcv, ioll)
       mcpm = ublarcvapp.mctools.MCPixelPMap()
       mcpm.set_adc_treename("wire")
       mcpm.buildmap(iolcv, mcpg)
-    #else:
-    #  vtxDistToTrue[0] = -99.
 
     vtxX[0] = vertex.pos[0]
     vtxY[0] = vertex.pos[1]
@@ -893,8 +1059,8 @@ for filepair in files:
     nTracks[0] = vertex.track_v.size()
     nShowers[0] = vertex.shower_v.size()
 
-    evtImage2D = iolcv.get_data("image2d","wire")
-    csmImage2D = iolcv.get_data("image2d","thrumu")
+    evtImage2D = iolcv.get_data("image2d", "wire")
+    csmImage2D = iolcv.get_data("image2d", "thrumu")
     adc_v = evtImage2D.Image2DArray()
     thrumu_v = csmImage2D.Image2DArray()
 
@@ -905,7 +1071,6 @@ for filepair in files:
     eventLarflowCluster = larlite.larflowcluster()
 
     recoNuE[0] = 0.
-
 
     #++++++ begin track loop ++++++++++++++++++++++++++++++++++++++++++++++++++=
     for iTrk, trackCls in enumerate(vertex.track_hitcluster_v):
@@ -946,17 +1111,25 @@ for filepair in files:
       nplanes_below = 0
       if goodTrack:
         skip = False
+        n_below_threshold = 0
         cropPt = vertex.track_v[iTrk].End()
+        print(" track loop[",iTrk,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
+        print(" track loop[",iTrk,"] prong_vv made",flush=True)        
+        # 2024/11/27: weaken threshold to allow for one dead-plane
         for p in range(3):
+          print("  plane[",p,"] track prong num of pixels: ",prong_vv[p].size())
           if prong_vv[p].size() < 10:
             nplanes_below += 1
             skip = True # Taritree: I think this is too strict for a prong. But leaving it.
             # this strikes me as too strict
             # maybe should be 2 out of 3 planes have low hits
-            #break
-        if nplanes_below>=2:
-          skip = True
+            #skip = True
+            n_below_threshold += 1
+            break
+        #if n_below_threshold>1:
+        #  skip = True
+        sys.stdout.flush()
           
       if skip:
         trackClassified[iTrk] = 0
@@ -973,7 +1146,9 @@ for filepair in files:
         trackFromNeutralScore[iTrk] = -99.
         trackFromChargedScore[iTrk] = -99.
         trackRecoE[iTrk] = -1.
-
+        #print(" track loop[",iTrk,"] skip this track prong",flush=True)
+        #continue
+        # origin/feature/tmw_photon_edep_info
       else:
         with torch.no_grad():
           prongImage = makeImage(prong_vv).to(args.device)
@@ -1074,7 +1249,11 @@ for filepair in files:
       recoNuE[0] += vertex.shower_plane_mom_vv[iShw][2].E()
 
       cropPt = vertex.shower_trunk_v[iShw].Vertex()
-      prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
+      #prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,shower,cropPt,10.,512,512)
+      print("  shower loop[",iShw,"] call make_cropped_initial_sparse_prong_image_reco for prong",flush=True)
+      sys.stdout.flush()      
+      prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,mod_thrumu_v,shower,cropPt,10.,512,512)
+      print("  shower-prong[",iShw,"] pixels:",flush=True)
       skip = False
       nplanes_below = 0      
       for p in range(3):
@@ -1084,7 +1263,8 @@ for filepair in files:
           #break
       if nplanes_below>=2:
         skip = True
-        
+      sys.stdout.flush()        
+
       if skip:
         showerClassified[iShw] = 0
         showerPID[iShw] = 0
@@ -1099,11 +1279,17 @@ for filepair in files:
         showerPrimaryScore[iShw] = -99.
         showerFromNeutralScore[iShw] = -99.
         showerFromChargedScore[iShw] = -99.
-
       else:
         with torch.no_grad():
+          print("   calling makeImage(...) for prong")
+          sys.stdout.flush()          
           prongImage = makeImage(prong_vv).to(args.device)
+          print("   image made: ",prongImage.shape)
+          sys.stdout.flush()          
           prongCNN_out = model(prongImage)
+          print("   cnn finished.")
+          sys.stdout.flush()          
+
         showerClassified[iShw] = 1
         showerPID[iShw] = getPID(prongCNN_out[0].argmax(1).item())
         showerElScore[iShw] = prongCNN_out[0][0][0].item()
@@ -1305,6 +1491,7 @@ for filepair in files:
         eventPCProjMaxDist[iPrj] = -9.
 
     eventTree.Fill()
+    iolcv.save_entry()
 
   #++++++ end entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
 

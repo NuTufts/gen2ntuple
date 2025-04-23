@@ -50,7 +50,6 @@ def getFiles(mdlTag, kpsfiles, mdlfiles):
       files.append( [ kpsfile.strip(), tagdict[recotag].strip() ] )
     else:
       print("DID NOT FIND KPS Reco File sam-tag (",recotag,") in source file tag dict (len=",len(tagdict))
-      
   return files
 
 detCrds = [[0., 256.35], [-116.5, 116.5], [0, 1036.8]]

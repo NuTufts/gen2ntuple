@@ -4,3 +4,6 @@
 /helpers/wirecell_fiducial_volume.o
 /.*.swp
 /*/.*.swp
+*.png
+*~
+*.root
