@@ -224,33 +224,39 @@ def makeImage(prong_vv):
   raw_plane2pix_row = np.zeros(prong_vv[5].size(), dtype=int)
   raw_plane2pix_col = np.zeros(prong_vv[5].size(), dtype=int)
   raw_plane2pix_val = np.zeros(prong_vv[5].size(), dtype=float)
-  for i, pix in enumerate(prong_vv[0]):
-    if pix.inCrop:
-      plane0pix_row.append(pix.row)
-      plane0pix_col.append(pix.col)
-      plane0pix_val.append(pix.val)
-  for i, pix in enumerate(prong_vv[1]):
-    if pix.inCrop:
-      plane1pix_row.append(pix.row)
-      plane1pix_col.append(pix.col)
-      plane1pix_val.append(pix.val)
-  for i, pix in enumerate(prong_vv[2]):
-    if pix.inCrop:
-      plane2pix_row.append(pix.row)
-      plane2pix_col.append(pix.col)
-      plane2pix_val.append(pix.val)
-  for i, pix in enumerate(prong_vv[3]):
-    raw_plane0pix_row[i] = pix.row
-    raw_plane0pix_col[i] = pix.col
-    raw_plane0pix_val[i] = pix.val
-  for i, pix in enumerate(prong_vv[4]):
-    raw_plane1pix_row[i] = pix.row
-    raw_plane1pix_col[i] = pix.col
-    raw_plane1pix_val[i] = pix.val
-  for i, pix in enumerate(prong_vv[5]):
-    raw_plane2pix_row[i] = pix.row
-    raw_plane2pix_col[i] = pix.col
-    raw_plane2pix_val[i] = pix.val
+  if prong_vv[0].size()>=10:
+    for i, pix in enumerate(prong_vv[0]):
+      if pix.inCrop:
+        plane0pix_row.append(pix.row)
+        plane0pix_col.append(pix.col)
+        plane0pix_val.append(pix.val)
+  if prong_vv[1].size()>=10:
+    for i, pix in enumerate(prong_vv[1]):
+      if pix.inCrop:
+        plane1pix_row.append(pix.row)
+        plane1pix_col.append(pix.col)
+        plane1pix_val.append(pix.val)
+  if prong_vv[2].size()>=10:
+    for i, pix in enumerate(prong_vv[2]):
+      if pix.inCrop:
+        plane2pix_row.append(pix.row)
+        plane2pix_col.append(pix.col)
+        plane2pix_val.append(pix.val)
+  if prong_vv[3].size()>=10:
+    for i, pix in enumerate(prong_vv[3]):
+      raw_plane0pix_row[i] = pix.row
+      raw_plane0pix_col[i] = pix.col
+      raw_plane0pix_val[i] = pix.val
+  if prong_vv[4].size()>=10:
+    for i, pix in enumerate(prong_vv[4]):
+      raw_plane1pix_row[i] = pix.row
+      raw_plane1pix_col[i] = pix.col
+      raw_plane1pix_val[i] = pix.val
+  if prong_vv[5].size()>=10:
+    for i, pix in enumerate(prong_vv[5]):
+      raw_plane2pix_row[i] = pix.row
+      raw_plane2pix_col[i] = pix.col
+      raw_plane2pix_val[i] = pix.val
   plane0pix_row = np.array(plane0pix_row, dtype=int)
   plane0pix_col = np.array(plane0pix_col, dtype=int)
   plane0pix_val = np.array(plane0pix_val, dtype=float)
@@ -436,6 +442,7 @@ trackEndPosX = array('f', maxNTrks*[0.])
 trackEndPosY = array('f', maxNTrks*[0.])
 trackEndPosZ = array('f', maxNTrks*[0.])
 trackClassified = array('i', maxNTrks*[0])
+trackNPlanesAbove = array('i',maxNTrks*[0])
 trackPID = array('i', maxNTrks*[0])
 trackElScore = array('f', maxNTrks*[0.])
 trackPhScore = array('f', maxNTrks*[0.])
@@ -477,6 +484,7 @@ showerStartDirX = array('f', maxNShwrs*[0.])
 showerStartDirY = array('f', maxNShwrs*[0.])
 showerStartDirZ = array('f', maxNShwrs*[0.])
 showerClassified = array('i', maxNShwrs*[0])
+showerNPlanesAbove = array('i',maxNShwrs*[0])
 showerPID = array('i', maxNShwrs*[0])
 showerElScore = array('f', maxNShwrs*[0.])
 showerPhScore = array('f', maxNShwrs*[0.])
@@ -604,6 +612,7 @@ eventTree.Branch("trackEndPosX", trackEndPosX, 'trackEndPosX[nTracks]/F')
 eventTree.Branch("trackEndPosY", trackEndPosY, 'trackEndPosY[nTracks]/F')
 eventTree.Branch("trackEndPosZ", trackEndPosZ, 'trackEndPosZ[nTracks]/F')
 eventTree.Branch("trackClassified", trackClassified, 'trackClassified[nTracks]/I')
+eventTree.Branch("trackNPlanesAbove", trackNPlanesAbove, 'trackNPlanesAbove[nTracks]/I')
 eventTree.Branch("trackPID", trackPID, 'trackPID[nTracks]/I')
 eventTree.Branch("trackElScore", trackElScore, 'trackElScore[nTracks]/F')
 eventTree.Branch("trackPhScore", trackPhScore, 'trackPhScore[nTracks]/F')
@@ -644,6 +653,7 @@ eventTree.Branch("showerStartDirX", showerStartDirX, 'showerStartDirX[nShowers]/
 eventTree.Branch("showerStartDirY", showerStartDirY, 'showerStartDirY[nShowers]/F')
 eventTree.Branch("showerStartDirZ", showerStartDirZ, 'showerStartDirZ[nShowers]/F')
 eventTree.Branch("showerClassified", showerClassified, 'showerClassified[nShowers]/I')
+eventTree.Branch("showerNPlanesAbove", showerNPlanesAbove, 'showerNPlanesAbove[nShowers]/I')
 eventTree.Branch("showerPID", showerPID, 'showerPID[nShowers]/I')
 eventTree.Branch("showerElScore", showerElScore, 'showerElScore[nShowers]/F')
 eventTree.Branch("showerPhScore", showerPhScore, 'showerPhScore[nShowers]/F')
@@ -1108,13 +1118,13 @@ for filepair in files:
       
 
       skip = True
+      n_below_threshold = 0      
       if goodTrack:
         skip = False
-        n_below_threshold = 0
         cropPt = vertex.track_v[iTrk].End()
         print(" track loop[",iTrk,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
-        print(" track loop[",iTrk,"] prong_vv made",flush=True)        
+        print(" track loop[",iTrk,"] prong_vv made. size=",prong_vv.size(),flush=True)
         # 2024/11/27: weaken threshold to allow for one dead-plane
         for p in range(3):
           print("  plane[",p,"] track prong num of pixels: ",prong_vv[p].size())
@@ -1127,9 +1137,11 @@ for filepair in files:
         if n_below_threshold>1:
           skip = True
         sys.stdout.flush()
+      trackNPlanesAbove[0] = n_below_threshold
           
       if skip:
         trackClassified[iTrk] = 0
+        trackNPlanesAbove[iTrk] = 0
         trackPID[iTrk] = 0
         trackElScore[iTrk] = -99.
         trackPhScore[iTrk] = -99.
@@ -1148,7 +1160,9 @@ for filepair in files:
         # origin/feature/tmw_photon_edep_info
       else:
         with torch.no_grad():
+          print("make prong image: ",prong_vv.size(),flush=True)
           prongImage = makeImage(prong_vv).to(args.device)
+          print("run prongCNN on track image",flush=True)
           prongCNN_out = model(prongImage)
         trackClassified[iTrk] = 1
         trackPID[iTrk] = getPID(prongCNN_out[0].argmax(1).item())
@@ -1260,10 +1274,12 @@ for filepair in files:
           #break
       if nplanes_below>=2:
         skip = True
-      sys.stdout.flush()        
+      sys.stdout.flush()
+      showerNPlanesAbove[iShw] = nplanes_below
 
       if skip:
         showerClassified[iShw] = 0
+        showerNPlanesAbove[iShw] = 0
         showerPID[iShw] = 0
         showerElScore[iShw] = -99.
         showerPhScore[iShw] = -99.
