@@ -743,7 +743,7 @@ for filepair in files:
 
     # prepare the shower-ssnet mod images
     wireplane_images_v = iolcv.get_data( larcv.kProductImage2D, "wire" )
-    flowTriples.make_trackshower_images_from_sparse_uresnet_output( iolcv ) ## need to add to larflow/
+    #flowTriples.make_trackshower_images_from_sparse_uresnet_output( iolcv ) ## need to add to larflow/
     mod_thrumu_v = flowTriples.make_thrumu_image_with_restored_ssnet_shower_pixels( iolcv, "ubspurn_plane", "thrumu" ) ## need to add larflow/
     cosmictagged_pixels_v = iolcv.get_data( larcv.kProductImage2D, "thrumu" )
     print("wireplane_images_v: ",wireplane_images_v)
@@ -991,8 +991,8 @@ for filepair in files:
       foundVertex[0] = 1
       if vtx.netNuScore > vtxScore[0]:
         vtxScore[0] = vtx.netNuScore
-        vtxKPtype[0]  = vertex.keypoint_type
-        vtxKPscore[0] = vertex.netScore        
+        vtxKPtype[0]  = vtx.keypoint_type
+        vtxKPscore[0] = vtx.netScore        
         vertex = vtx
         vtxIndex = ivtx
 
@@ -1032,14 +1032,14 @@ for filepair in files:
       iolcv.save_entry()
       continue
 
-    if args.isMC:
-      # build up information to tag true shower keypoints
-      mcpg = ublarcvapp.mctools.MCPixelPGraph()
-      mcpg.set_adc_treename("wire")
-      mcpg.buildgraph(iolcv, ioll)
-      mcpm = ublarcvapp.mctools.MCPixelPMap()
-      mcpm.set_adc_treename("wire")
-      mcpm.buildmap(iolcv, mcpg)
+    #if args.isMC:
+    #  # build up information to tag true shower keypoints
+    #  mcpg = ublarcvapp.mctools.MCPixelPGraph()
+    #  mcpg.set_adc_treename("wire")
+    #  mcpg.buildgraph(iolcv, ioll)
+    #  mcpm = ublarcvapp.mctools.MCPixelPMap()
+    #  mcpm.set_adc_treename("wire")
+    #  mcpm.buildmap(iolcv, mcpg)
 
     vtxX[0] = vertex.pos[0]
     vtxY[0] = vertex.pos[1]
@@ -1108,7 +1108,6 @@ for filepair in files:
       
 
       skip = True
-      nplanes_below = 0
       if goodTrack:
         skip = False
         n_below_threshold = 0
@@ -1120,15 +1119,13 @@ for filepair in files:
         for p in range(3):
           print("  plane[",p,"] track prong num of pixels: ",prong_vv[p].size())
           if prong_vv[p].size() < 10:
-            nplanes_below += 1
-            skip = True # Taritree: I think this is too strict for a prong. But leaving it.
+            #skip = True # Taritree: I think this is too strict for a prong. But leaving it.
             # this strikes me as too strict
             # maybe should be 2 out of 3 planes have low hits
             #skip = True
             n_below_threshold += 1
-            break
-        #if n_below_threshold>1:
-        #  skip = True
+        if n_below_threshold>1:
+          skip = True
         sys.stdout.flush()
           
       if skip:
@@ -1259,7 +1256,7 @@ for filepair in files:
       for p in range(3):
         if prong_vv[p].size() < 10:
           nplanes_below += 1          
-          skip = True # Taritree: I think this is too strict for a prong. But leaving it.
+          #skip = True # Taritree: I think this is too strict for a prong.
           #break
       if nplanes_below>=2:
         skip = True
