@@ -36,8 +36,8 @@ echo "running array ID $SLURM_ARRAY_TASK_ID (sample output tag: $outTag) on node
 
 #ls /cluster/tufts/wongjiradlab/
 
-source ${ubdlDir}/setenv_py3.sh
-source ${ubdlDir}/configure.sh
+source ${ubdlDir}/setenv_py3_container.sh
+source ${ubdlDir}/configure_container.sh
 export PYTHONPATH=${PYTHONPATH}:${scriptDir}
 
 maxFileCount=`wc -l < $kpsRecoFiles`

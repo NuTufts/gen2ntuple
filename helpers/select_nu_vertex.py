@@ -102,10 +102,59 @@ def highest_kprank_with_visenergy(nuvetoed_v=None, nuselvar_v=None, min_num_show
 
     return foundVertex, vtxScore, vtxindex
 
+def highest_intime_reco_frac( nuvetoed_v, nuselvar_v, prioritize_by_keypoint=True ):
+    nvertices = nuvetoed_v.size()
+    kp_intime_reco_frac = {0:10.0,
+                           1:10.0,
+                           2:10.0,
+                           3:10.0}
+    kp_index = {0:-1,
+                1:-1,
+                2:-1,
+                3:-1}
 
+
+    max_intime_reco_frac = 10.0
+    max_kpindex = -1
+    
+    for ivtx in range(nvertices):
+        nuvtx = nuvetoed_v.at(ivtx)
+        if nuvtx.track_v.size()==0:
+            continue
+        if nuvtx.shower_v.size()==0:
+            continue
+        
+        nusel = nuselvar_v.at(ivtx)
+        kptype = int(nuvtx.keypoint_type)
+        if kptype>3:
+            continue
+        frac_intime_reco = [ nusel.unreco_fraction_v[i] for i in range(3) ]
+        frac_intime_reco.sort()
+        if frac_intime_reco[1]<kp_intime_reco_frac[kptype]:
+            kp_intime_reco_frac[kptype]=frac_intime_reco[1]
+            kp_index[kptype] = ivtx
+        if frac_intime_reco[1]<max_intime_reco_frac:
+            max_kpindex = ivtx
+
+    if prioritize_by_keypoint:
+        # we go in kptype prioritization    
+        for ikp in [0,3,1,2]:
+            if kp_index[ikp]!=-1:
+                max_idx = kp_index[ikp]
+                kpscore = nuvetoed_v.at(max_idx).netScore
+                print("select_nu_vertex.py: highest_intime_reco_frac : kptype=",ikp," idx=",max_idx," intime_reco_frac=",kp_intime_reco_frac[ikp])
+                return 1, kpscore, kp_index[ikp]
+            
+    if max_kpindex>=0:
+        kpscore = nuvetoed_v.at(max_kpindex).netScore
+        return 1, kpscore, max_kpindex
+    
+    return 0, 0.0, -1
 
 def select_nu_vertex(selector='highest_nu_keypoint_score', kwargs={}):
     if selector=='highest_nu_keypoint_score':
         return highest_nu_keypoint_score(**kwargs)
     elif selector=="highest_kprank_with_visenergy":
         return highest_kprank_with_visenergy(**kwargs)
+    elif selector=="highest_intime_reco_frac":
+        return highest_intime_reco_frac(**kwargs)

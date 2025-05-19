@@ -271,7 +271,7 @@ prongvars = larflow.reco.NuSelProngVars()
 wcoverlapvars = larflow.reco.NuSelWCTaggerOverlap()
 flowTriples = larflow.prep.FlowTriples()
 piKEestimator = pionRange2T()
-clusterFuncs = larflow.reco.ClusterFunctions()
+clusterFuncs = larflow.recoutils.ClusterFunctions()
 photonTruthMetrics = larflow.reco.ShowerTruthMetricsMaker()
 
 model = ResNet34(2, ResBlock, outputs=5)
@@ -373,6 +373,8 @@ if args.isMC:
 vtxScore = array('f', [0.])
 vtxMaxIntimePixelSum = array('f',[0.])
 vtxFracHitsOnCosmic = array('f', [0.])
+fracUnrecoIntimePixels = array('f', [0.]*3)
+fracRecoOuttimePixels  = array('f', [0.]*3)
 vtxKPtype = array('i',[-1])
 vtxKPscore = array('f',[0.0])
 eventPCAxis0 = array('f', 3*[0.])
@@ -542,6 +544,8 @@ eventTree.Branch("vtxMaxIntimePixelSum", vtxMaxIntimePixelSum, "vtxMaxIntimePixe
 eventTree.Branch("vtxKPtype", vtxKPtype, 'vtxKPtype/I')
 eventTree.Branch("vtxKPscore", vtxKPscore, 'vtxKPtype/F')
 eventTree.Branch("vtxFracHitsOnCosmic", vtxFracHitsOnCosmic, 'vtxFracHitsOnCosmic/F')
+eventTree.Branch("fracUnrecoIntimePixels", fracUnrecoIntimePixels, 'fracUnrecoIntimePixels[3]/F')
+eventTree.Branch("fracRecoOuttimePixels", fracRecoOuttimePixels, 'fracRecoOuttimePixels[3]/F')
 eventTree.Branch("eventPCAxis0", eventPCAxis0, 'eventPCAxis0[3]/F')
 eventTree.Branch("eventPCAxis1", eventPCAxis1, 'eventPCAxis1[3]/F')
 eventTree.Branch("eventPCAxis2", eventPCAxis2, 'eventPCAxis2[3]/F')
@@ -933,10 +937,16 @@ for filepair in files:
     #foundVertex[0], vtxScore[0], vtxIndex = select_nu_vertex( selector="highest_kprank_with_visenergy",
     #                                                          kwargs={"nuvetoed_v":kpst.nuvetoed_v,
     #                                                                  "nuselvar_v":kpst.nu_sel_v} )
-    foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
-                                                                           nuselvar_v=kpst.nu_sel_v,
-                                                                           min_num_showers=1)
-
+    #foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
+    #                                                                       nuselvar_v=kpst.nu_sel_v,
+    #                                                                       min_num_showers=1)
+    foundVertex[0], vtxScore[0], vtxIndex = select_nu_vertex( selector="highest_intime_reco_frac",
+                                                              kwargs={"nuvetoed_v":kpst.nuvetoed_v,
+                                                                      "nuselvar_v":kpst.nu_sel_v,
+                                                                      "prioritize_by_keypoint":True} )
+    
+    
+    print("select_nu_vertex returns: foundVertex[0]=",foundVertex[0]," vtxIndex=",vtxIndex," score=",vtxScore[0])
     nvertices = kpst.nuvetoed_v.size()
     ivtx_max_intime_sum = -1
     max_intime_sum = 0.0
@@ -968,6 +978,9 @@ for filepair in files:
       if args.isMC:
         vtxDistToTrue[0] = -99.
       vtxFracHitsOnCosmic[0] = -1.
+      for p in range(3):
+        fracRecoOuttimePixels[p] = 0.
+        fracUnrecoIntimePixels[p] = 0.
       nTracks[0] = 0
       nShowers[0] = 0
       for iPCA in range(3):
@@ -1006,6 +1019,15 @@ for filepair in files:
     nusel = larflow.reco.NuSelectionVariables()
     wcoverlapvars.analyze(vertex, nusel, iolcv)
     vtxFracHitsOnCosmic[0] = nusel.frac_allhits_on_cosmic
+    for p in range(3):
+      fracRecoOuttimePixels[p] = 0.
+      fracUnrecoIntimePixels[p] = 0.
+    if kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v.size()>=3:
+      for p in range(3):
+        fracUnrecoIntimePixels[p] = kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v[p]
+      if  kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v.size()>=6:
+        for p in range(3,6):
+          fracRecoOuttimePixels[p-3] = kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v[p]
 
     nTracks[0] = vertex.track_v.size()
     nShowers[0] = vertex.shower_v.size()
