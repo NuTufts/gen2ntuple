@@ -14,6 +14,7 @@ import os
 def get_kpsana_file_samhash( filename ):
   # looks like: /cluster/tufts/wongjiradlabnu/nutufts/data/v3dev_lm_showerkp_retraining/mcc9_v29e_dl_run3_G1_extbnb_dlana/larflowreco/ana/000/larflowreco_fileid0000_d9679e9b-3be3-4411-bc25-6e2cea860827_kpsrecomanagerana.root
   bname = os.path.basename( filename.strip() )
+  print("get hash from ",bname,flush=True)
   samhash = bname.split("_")[2]
   return samhash
 
