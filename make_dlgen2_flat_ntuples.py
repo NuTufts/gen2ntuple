@@ -23,6 +23,7 @@ parser.add_argument("-o", "--outfile", type=str, default="dlgen2_flat_ntuple.roo
 parser.add_argument("-nkp","--noKeypoints", action="store_true", help="don't save keypoint info")
 parser.add_argument("-tb","--tickbackward", action="store_true", help="load in larcv image with reverse time order")
 parser.add_argument("--ignoreWeights", action="store_true", help="don't look up xsec weights, set to 1 and process all MC events (default: lookup xsec weights and exit with error if not found)")
+parser.add_argument("--noEvtSkipping", action="store_true", help="write output for every event in merged_dlreco file")
 parser.add_argument("--skipNoWeightEvts", action="store_true", help="skip MC events if we can't find xsec weights but continue processing (default: exit with error)")
 parser.add_argument("--multiGPU", action="store_true", help="use multiple GPUs")
 parser.add_argument("--nentries","-n",default=-1,help="number of entries to run. default=-1 which will run all events")
@@ -324,8 +325,14 @@ outRootFile = rt.TFile(args.outfile, "RECREATE")
 
 if args.isMC:
   potTree = rt.TTree("potTree","potTree")
+  Run = array('i', [0])
+  Subrun = array('i', [0])
+  badReco = array('i', [0])
   totPOT = array('f', [0.])
   totGoodPOT = array('f', [0.])
+  potTree.Branch("run", Run, 'run/I')
+  potTree.Branch("subrun", Subrun, 'subrun/I')
+  potTree.Branch("badReco", badReco, 'badReco/I')
   potTree.Branch("totPOT", totPOT, 'totPOT/F')
   potTree.Branch("totGoodPOT", totGoodPOT, 'totGoodPOT/F')
 
@@ -681,8 +688,8 @@ if args.isMC:
 
 
 if args.isMC:
-  totPOT_ = 0.
-  totGoodPOT_ = 0.
+  #totPOT_ = 0.
+  #totGoodPOT_ = 0.
   if not args.ignoreWeights:
     weights = Weights(args.weightfile)
 
@@ -708,30 +715,68 @@ for filepair in files:
 
   kpsfile = rt.TFile(filepair[0])
   kpst = kpsfile.Get("KPSRecoManagerTree")
+  bad_kpsfile = False
 
   try:
     nKPSTEntries = kpst.GetEntries()
   except:
-    print("WARNING: %s is empty. skipping..."%(filepair[0]))
-    ioll.close()
-    iolcv.finalize()
-    kpsfile.Close()
-    continue
-
-  if args.isMC:
-    potInFile, goodPotInFile = SumPOT(filepair[1])
-    if potInFile < 0. and goodPotInFile < 0.:
-      print("WARNING: merged dlreco/dlana file does not have POT info. Skipping this input")
+    if not args.noEvtSkipping:
+      print("WARNING: %s is empty. skipping..."%(filepair[0]))
+      ioll.close()
+      iolcv.finalize()
+      kpsfile.Close()
       continue
-    totPOT_ = totPOT_ + potInFile
-    totGoodPOT_ = totGoodPOT_ + goodPotInFile
+    bad_kpsfile = True
+    print("WARNING: %s is empty."%(filepair[0]))
+
+  #if args.isMC:
+  #  totPOT_ = 0.
+  #  totGoodPOT_ = 0.
+  #  potInFile, goodPotInFile = SumPOT(filepair[1])
+  #  if potInFile < 0. and goodPotInFile < 0.:
+  #    if not args.noEvtSkipping:
+  #      print("WARNING: merged dlreco/dlana file does not have POT info. Skipping this input")
+  #      continue
+  #    print("WARNING: merged dlreco/dlana file does not have POT info.")
+  #  else:
+  #    totPOT_ = totPOT_ + potInFile
+  #    totGoodPOT_ = totGoodPOT_ + goodPotInFile
 
   #++++++ begin entry loop ++++++++++++++++++++++++++++++++++++++++++++++++++++=
-  nentries = min(ioll.get_entries(),nKPSTEntries)
+  nentries = ioll.get_entries() if args.noEvtSkipping else min(ioll.get_entries(),nKPSTEntries)
   if args.nentries>0:
     if args.nentries<nentries:
       nentries = args.nentries
   
+  #tag bad reco subruns (need to do upfront to do MC POT counting properly in case of event mismatch)
+  bad_subruns = set()
+
+  for ientry in range(nentries):
+
+    ioll.go_to(ientry)
+
+    bad_reco_subrun = True
+
+    if not bad_kpsfile and ientry < kpst.GetEntries():
+      kpst.GetEntry(ientry)
+  
+      if kpst.run != ioll.run_id() or kpst.subrun != ioll.subrun_id() or kpst.event != ioll.event_id():
+        print("WARNING: EVENTS DON'T MATCH!!!")
+        print("truth run/subrun/event: %i/%i/%i"%(ioll.run_id(),ioll.subrun_id(),ioll.event_id()))
+        print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
+        bad_kpsfile = True
+        if not args.noEvtSkipping:
+          sys.exit(1)
+          continue
+      else:
+        bad_reco_subrun = False
+
+    if bad_reco_subrun:
+      rsr = (ioll.run_id(), ioll.subrun_id())
+      if rsr not in bad_subruns:
+        bad_subruns.add(rsr)
+    
+
   print("Begin Entry Loop over ",nentries," entries")
   for ientry in range(nentries):
 
@@ -742,14 +787,6 @@ for filepair in files:
 
     ioll.go_to(ientry)
     iolcv.read_entry(ientry)
-    kpst.GetEntry(ientry)
-  
-    if kpst.run != ioll.run_id() or kpst.subrun != ioll.subrun_id() or kpst.event != ioll.event_id():
-      print("WARNING: EVENTS DON'T MATCH!!!")
-      print("truth run/subrun/event: %i/%i/%i"%(ioll.run_id(),ioll.subrun_id(),ioll.event_id()))
-      print("reco run/subrun/event: %i/%i/%i"%(kpst.run,kpst.subrun,kpst.event))
-      sys.exit(1)
-      continue
 
     # prepare the shower-ssnet mod images
     wireplane_images_v = iolcv.get_data( larcv.kProductImage2D, "wire" )
@@ -796,16 +833,17 @@ for filepair in files:
         xsecWeight[0] = 1.
       else:
         try:
-          xsecWeight[0] = weights.get(kpst.run, kpst.subrun, kpst.event)
+          xsecWeight[0] = weights.get(ioll.run_id(), ioll.subrun_id(), ioll.event_id())
           if isinf(xsecWeight[0]):
-            # is this the right procedure?
-            continue
+            xsecWeight[0] = 1.
         except:
-          if args.skipNoWeightEvts:
-            print("WARNING: Couldn't find xsec weight for run %i, subrun %i, event %i in %s!!!"%(kpst.run, kpst.subrun, kpst.event, args.weightfile))
-            continue
-          else:
-            sys.exit("ERROR: Couldn't find xsec weight for run %i, subrun %i, event %i in %s!!!"%(kpst.run, kpst.subrun, kpst.event, args.weightfile))
+          if not args.noEvtSkipping:
+            if args.skipNoWeightEvts:
+              print("WARNING: Couldn't find xsec weight for run %i, subrun %i, event %i in %s!!! Skipping event..."%(ioll.run_id(), ioll.subrun_id(), ioll.event_id(), args.weightfile))
+              continue
+            else:
+              sys.exit("ERROR: Couldn't find xsec weight for run %i, subrun %i, event %i in %s!!!"%(ioll.run_id(), ioll.subrun_id(), ioll.event_id(), args.weightfile))
+          print("WARNING: Couldn't find xsec weight for run %i, subrun %i, event %i in %s!!!"%(ioll.run_id(), ioll.subrun_id(), ioll.event_id(), args.weightfile))
 
       if nuInt.CCNC() == 0:
         trueLepPDG[0] = lep.PdgCode()
@@ -930,7 +968,48 @@ for filepair in files:
     #  nTrueSimParts[0] = -1
     print("done with entry MC variables")
 
+    #initialize reco variables
     fileid[0] = -1
+    run[0] = -1
+    subrun[0] = -1
+    event[0] = -1
+    if not args.noKeypoints:
+      nKeypoints[0] = 0
+    foundVertex[0] = 0
+    vtxScore[0] = -1.
+    vtxKPtype[0] = -1
+    vtxKPscore[0] = 0.0
+    vtxMaxIntimePixelSum[0] = -1.0
+    recoNuE[0] = -9.
+    vtxX[0] = -999.
+    vtxY[0] = -999.
+    vtxZ[0] = -999.
+    vtxIsFiducial[0] = -1
+    vtxContainment[0] = -1
+    if args.isMC:
+      vtxDistToTrue[0] = -99.
+    vtxFracHitsOnCosmic[0] = -1.
+    nTracks[0] = 0
+    nShowers[0] = 0
+    for iPCA in range(3):
+      eventPCAxis0[iPCA] = 0.
+      eventPCAxis1[iPCA] = 0.
+      eventPCAxis2[iPCA] = 0.
+      eventPCAxis0TSlope[0] = 0
+      eventPCEigenVals[iPCA] = 0.
+    for iPrj in range(5):
+      eventPCProjMaxGap[iPrj] = -9.
+      eventPCProjMaxDist[iPrj] = -9.
+
+    if (ioll.run_id(), ioll.subrun_id()) in bad_subruns:
+      # Stop here, no reco, move to next event
+      # we will already have quit unless noEvtSkipping flag was supplied  
+      eventTree.Fill()
+      iolcv.save_entry()
+      continue
+
+    kpst.GetEntry(ientry)
+
     for tag in filepair[0].split("_"):
       if 'fileid' in tag:
         fileid[0] = int(tag.replace("fileid",""))
@@ -940,7 +1019,6 @@ for filepair in files:
     event[0] = kpst.event
 
     if not args.noKeypoints:
-      nKeypoints[0] = 0
       for kp in kpst.kpc_nu_v:
         kpClusterType[nKeypoints[0]] = kp._cluster_type
         kpFilterType[nKeypoints[0]] = 0
@@ -974,11 +1052,6 @@ for filepair in files:
         kpMaxPosZ[nKeypoints[0]] = kp.max_pt_v[2]
         nKeypoints[0] += 1
 
-    foundVertex[0] = 0
-    vtxScore[0] = -1.
-    vtxKPtype[0] = -1
-    vtxKPscore[0] = 0.0
-    vtxMaxIntimePixelSum[0] = -1.0
     nvertices = kpst.nuvetoed_v.size()
     vtxIndex = -1
     ivtx_max_intime_sum = -1
@@ -1016,26 +1089,6 @@ for filepair in files:
     print("vtxMaxIntimePixelSum: ",max_intime_sum)
 
     if foundVertex[0] == 0:
-      recoNuE[0] = -9.
-      vtxX[0] = -999.
-      vtxY[0] = -999.
-      vtxZ[0] = -999.
-      vtxIsFiducial[0] = -1
-      vtxContainment[0] = -1
-      if args.isMC:
-        vtxDistToTrue[0] = -99.
-      vtxFracHitsOnCosmic[0] = -1.
-      nTracks[0] = 0
-      nShowers[0] = 0
-      for iPCA in range(3):
-        eventPCAxis0[iPCA] = 0.
-        eventPCAxis1[iPCA] = 0.
-        eventPCAxis2[iPCA] = 0.
-        eventPCAxis0TSlope[0] = 0
-        eventPCEigenVals[iPCA] = 0.
-      for iPrj in range(5):
-        eventPCProjMaxGap[iPrj] = -9.
-        eventPCProjMaxDist[iPrj] = -9.
       # Stop here
       # no reco vertex, move to next event      
       eventTree.Fill()
@@ -1512,14 +1565,31 @@ for filepair in files:
   iolcv.finalize()
   kpsfile.Close()
 
+  if args.isMC:
+    print("Saving POT")
+    try:
+      mdlfile = rt.TFile(filepair[1])
+      mdlPOTtree = mdlfile.Get("potsummary_generator_tree")
+      for entry in range(mdlPOTtree.GetEntries()):
+        mdlPOTtree.GetEntry(entry)
+        Run[0] = mdlPOTtree.potsummary_generator_branch.run()
+        Subrun[0] = mdlPOTtree.potsummary_generator_branch.subrun()
+        badReco[0] = int( (Run[0], Subrun[0]) in bad_subruns )
+        totPOT[0] = mdlPOTtree.potsummary_generator_branch.totpot
+        totGoodPOT[0] = mdlPOTtree.potsummary_generator_branch.totgoodpot
+        potTree.Fill()
+      mdlfile.Close()
+    except:
+      print("ERROR: POT info not in merged_dlreco file!!!")
+
 #-------- end file loop -----------------------------------------------------#
 print("End of loop")
 
-if args.isMC:
-  print("Saving POT")
-  totPOT[0] = totPOT_
-  totGoodPOT[0] = totGoodPOT_
-  potTree.Fill()
+#if args.isMC:
+#  print("Saving POT")
+#  totPOT[0] = totPOT_
+#  totGoodPOT[0] = totGoodPOT_
+#  potTree.Fill()
 
 print("Writing")
 outRootFile.cd()
