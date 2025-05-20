@@ -17,11 +17,16 @@ missing_arrayids = []
 #narrayids = 583
 #nfiles=20
 
-sample="mcc9_v29e_dl_run3_G1_extbnb_dlana"
-bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v29e_dl_run3_G1_extbnb_dlana.txt"
-recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v29e_dl_run3_G1_extbnb_dlana.txt"
-narrayids=584
-nfiles=20
+#sample="mcc9_v29e_dl_run3_G1_extbnb_dlana"
+#bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v29e_dl_run3_G1_extbnb_dlana.txt"
+#recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v29e_dl_run3_G1_extbnb_dlana.txt"
+#narrayids=584
+#nfiles=20
+sample="v3dev_reco_retune"
+bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV.txt"
+recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV_v3dev_reco_retune.txt"
+nfiles=5
+narrayids=1
 
 # open and parse the book keeping file
 fileidmap = {}

@@ -43,21 +43,24 @@ export PYTHONPATH=${PYTHONPATH}:${scriptDir}
 maxFileCount=`wc -l < $kpsRecoFiles`
 let firstfile="${SLURM_ARRAY_TASK_ID}*${nfiles}+1"
 let lastfile="$firstfile+$nfiles-1"
+#let lastfile="${firstfile}"
+echo "filest to run between first=${filefile} to last=${lastfile}"
 files=""
-
 for n in $(seq $firstfile $lastfile); do
   if (($n > $maxFileCount)); then
     break
   fi
-  newfile=`sed -n ${n}p ${kpsRecoFiles}`
+  #newfile=`sed -n ${n}p ${kpsRecoFiles}`
+  newfile=`sed -n ${n}p ${kpsRecoFiles} | awk '{ print $2 }'`
   files="$files $newfile"
 done
+echo "files: ${files}"
 
 scriptName=`echo $1 | sed s/.py//g`
 logFile="${logDir}/${scriptName}_${outTag}_${SLURM_ARRAY_TASK_ID}.log"
 
 local_jobdir=`printf /tmp/run_selection_jobid%d_%04d ${SLURM_JOB_ID} ${SLURM_ARRAY_TASK_ID}`
-rm -rf $local_jobdir
+#rm -rf $local_jobdir
 mkdir -p $local_jobdir
 cd $local_jobdir  
 
@@ -89,7 +92,7 @@ done
 mergedOutput="ntuple_${sampleName}_${outTag}_output_${SLURM_ARRAY_TASK_ID}.root"
 echo "output files: $outputs" >> ${logFile}
 echo "merging into: $mergedOutput" >> ${logFile}
-hadd $mergedOutput $outputs
+hadd -f $mergedOutput $outputs
 cp $mergedOutput $outDir
 
 # clean-up

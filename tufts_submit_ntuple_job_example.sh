@@ -5,20 +5,20 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=4000
-#SBATCH --array=0
-#SBATCH --partition=wongjiradlab
-##SBATCH --partition=batch
+#SBATCH --array=3
+##SBATCH --partition=wongjiradlab
+#SBATCH --partition=batch
 ##SBATCH --exclude=i2cmp006,s1cmp001,s1cmp002,s1cmp003,p1cmp005,p1cmp041,c1cmp003,c1cmp004i
 ##SBATCH --exclude=p1cmp075
 #SBATCH --error=err/griderr_ntuple_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV.sub00.%A.%a.node%N.err
 #SBATCH --output=log/stdout_ntuple_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV.sub00.%A.%a.node%N.log
 
-NFILES=1
+NFILES=5
 
 #CONTAINER=/cluster/tufts/wongjiradlabnu/larbys/larbys-container/singularity_minkowski_u20.04.cu111.torch1.9.0_jupyter_xgboost.sif
 CONTAINER=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_torch1.9.0_minkowski.sif
-
-VALSCRIPT=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/tufts_run_ntuple_maker.sh
+GEN2NTUPLE_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/
+VALSCRIPT=${GEN2NTUPLE_DIR}/tufts_run_ntuple_maker.sh
 
 #RECOFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/larflowreco_v2_me_06/mcc9_v28_wctagger_bnboverlay_filelist.txt
 #TRUTHFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/mcc9_v28_wctagger_bnboverlay_filelist.txt
@@ -53,8 +53,8 @@ VALSCRIPT=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/tufts_run_ntupl
 #SAMPLENAME=mcc9_v29e_dl_run3_G1_extbnb_dlana
 
 # MCC9 v40
-TRUTHFILELIST=/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/filelists/filelist_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV.txt
-RECOFILELIST=/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV_v3dev_reco_retune.txt
+TRUTHFILELIST=${GEN2NTUPLE_DIR}/filelists/filelist_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV.txt
+RECOFILELIST=${GEN2NTUPLE_DIR}/goodoutput_lists/goodoutput_list_mcc9_v40a_dl_run1_bnb_intrinsic_nue_overlay_CV_v3dev_reco_retune.txt
 SAMPLENAME=v3dev_reco_retune
 
 # MCC9 v28 BNB 5e19
@@ -80,6 +80,6 @@ WEIGHTFILE=weights_forCV_v48_Sep24_intrinsic_nue_run1.pkl
 
 module load singularity/3.5.3
 
-#singularity exec --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab ${CONTAINER} bash -c "source $VALSCRIPT make_dlgen2_flat_ntuples.py $RECOFILELIST $TRUTHFILELIST $WEIGHTFILE $CNNMODEL $OUTTAG $NFILES ${SAMPLENAME} -mc"
-singularity exec --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab ${CONTAINER} bash -c "source $VALSCRIPT make_dlgen2_flat_ntuples.py $RECOFILELIST $TRUTHFILELIST $WEIGHTFILE $CNNMODEL $OUTTAG $NFILES ${SAMPLENAME} -ana"
+singularity exec --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab ${CONTAINER} bash -c "source $VALSCRIPT make_dlgen2_flat_ntuples.py $RECOFILELIST $TRUTHFILELIST $WEIGHTFILE $CNNMODEL $OUTTAG $NFILES ${SAMPLENAME} -mc"
+#singularity exec --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab ${CONTAINER} bash -c "source $VALSCRIPT make_dlgen2_flat_ntuples.py $RECOFILELIST $TRUTHFILELIST $WEIGHTFILE $CNNMODEL $OUTTAG $NFILES ${SAMPLENAME} -ana"
 #singularity exec --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab ${CONTAINER} bash -c "source $VALSCRIPT make_dlgen2_flat_ntuples.py $RECOFILELIST $TRUTHFILELIST $WEIGHTFILE $CNNMODEL $OUTTAG $NFILES ${SAMPLENAME}"

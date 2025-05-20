@@ -140,10 +140,19 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
 
   particleDict = {}
   trackDict = {}
-  totalPixI = 0.
+  totalPixI = 0.0
+
+  nsparse_imgs = sparseimg_vv.size()
+  print("[getMCProngParticle] num sparse images=",sparseimg_vv.size(),flush=True)
+  print("  adc_v.size()=",adc_v.size(),flush=True)
+  print("  pmcpg: ",mcpg,flush=True)
+  print("  pmcpm: ",mcpm,flush=True)
 
   for p in range(3):
-    for pix in sparseimg_vv[p]:
+    sparseimg = sparseimg_vv.at(p)
+    npix = sparseimg.size()
+    for iipix in range(npix):
+      pix = sparseimg.at(iipix)
       totalPixI += pix.val
       pixContents = mcpm.getPixContent(p, pix.rawRow, pix.rawCol)
       for part in pixContents.particles:
@@ -155,6 +164,10 @@ def getMCProngParticle(sparseimg_vv, mcpg, mcpm, adc_v, ioll):
           trackDict[part.tid][2] += pixContents.pixI
         else:
           trackDict[part.tid] = [part.pdg, part.nodeidx, pixContents.pixI]
+  print("particledict: ")
+  print(particleDict)
+  print("trackdict: ")
+  print(trackDict)
 
   maxPartPDG = 0 
   maxPartNID = -1
@@ -801,6 +814,9 @@ for filepair in files:
       for mcpart in mctruth.at(0).GetParticles():
         if mcpart.StatusCode() == 1:
           nTruePrimParts[0] += 1
+          # dont go past maximum
+          if nTruePrimParts[0]==maxNParts:
+            break
           truePrimPartPDG[iPP] = mcpart.PdgCode()
           sceCorrectedStartPos = getSCECorrectedPos(mcpart.Position(0), sce)
           sceCorrectedEndPos = getSCECorrectedPos(mcpart.Position(mcpart.Trajectory().size()-1), sce)
@@ -823,8 +839,16 @@ for filepair in files:
       nTrueSimParts[0] = 0
       iDS = 0
       for mcparts in [mctracks, mcshowers]:
+
+        # prevent overrunning true sim particle array
+        if nTrueSimParts[0]==maxNParts:
+          break
+        
         for mcpart in mcparts:
           nTrueSimParts[0] += 1
+          # prevent overrunning true sim particle array          
+          if nTrueSimParts[0]==maxNParts:
+            break
           trueSimPartPDG[iDS] = mcpart.PdgCode()
           trueSimPartTID[iDS] = mcpart.TrackID()
           trueSimPartMID[iDS] = mcpart.MotherTrackID()
@@ -1003,7 +1027,7 @@ for filepair in files:
       vtxIsFiducial[0] = -1
       vtxContainment[0] = -1
       if args.isMC:
-        vtxDistToTrue[0] = -99.
+        vtxDistToTrue[0] = -99.0
       vtxFracHitsOnCosmic[0] = -1.
       for p in range(3):
         fracRecoOuttimePixels[p] = 0.
@@ -1032,6 +1056,12 @@ for filepair in files:
       mcpm.set_adc_treename("wire")
       mcpm.buildmap(iolcv, mcpg)
 
+      # calculate dist 2 true vertex
+      v2t_dx = vertex.pos[0]-trueVtxPos.X()
+      v2t_dy = vertex.pos[1]-trueVtxPos.Y()
+      v2t_dz = vertex.pos[2]-trueVtxPos.Z()
+      vtxDistToTrue[0] = sqrt( v2t_dx*v2t_dx + v2t_dy*v2t_dy + v2t_dz*v2t_dz )
+
     vtxX[0] = vertex.pos[0]
     vtxY[0] = vertex.pos[1]
     vtxZ[0] = vertex.pos[2]
@@ -1057,7 +1087,11 @@ for filepair in files:
           fracRecoOuttimePixels[p-3] = kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v[p]
 
     nTracks[0] = vertex.track_v.size()
+    if nTracks[0]>=maxNTrks:
+      nTracks[0] = maxNTrks
     nShowers[0] = vertex.shower_v.size()
+    if nShowers[0]>=maxNShwrs:
+      nShowers[0] = maxNShwrs
 
     #evtImage2D = iolcv.get_data(larcv.kProductImage2D, "wire")
     #csmImage2D = iolcv.get_data(larcv.kProductImage2D, "thrumu")
@@ -1076,16 +1110,21 @@ for filepair in files:
 
 
     #++++++ begin track loop ++++++++++++++++++++++++++++++++++++++++++++++++++=
-    for iTrk, trackCls in enumerate(vertex.track_hitcluster_v):
-
-      for hit in trackCls:
+    for iTrk in range(nTracks[0]):
+      trackCls = vertex.track_hitcluster_v.at(iTrk)
+      nhits = trackCls.size()
+      for iihit in range(nhits):
+        hit = trackCls.at(iihit)
         eventLarflowCluster.push_back(hit)
         if prongsAreContained:
           hitPt = rt.TVector3(hit[0], hit[1], hit[2])
           prongsAreContained = isFiducialWCSCE(hitPt)
 
       vertexNHits += trackCls.size()
-      trackIsSecondary[iTrk] = vertex.track_isSecondary_v[iTrk]
+      if iTrk < vertex.track_isSecondary_v.size():
+        trackIsSecondary[iTrk] = vertex.track_isSecondary_v[iTrk]
+      else:
+        trackIsSecondary[iTrk] = -1
       trackNHits[iTrk] = trackCls.size()
       trackCharge[iTrk], vertexPixels, vertexCharge = addClusterCharge(iolcv,trackCls,vertexPixels,vertexCharge,10.)
       nTrajPoints = vertex.track_v[iTrk].NumberTrajectoryPoints()
@@ -1218,16 +1257,23 @@ for filepair in files:
 
 
     #++++++ begin shower loop ++++++++++++++++++++++++++++++++++++++++++++++++++=
-    for iShw, shower in enumerate(vertex.shower_v):
-
-      for hit in shower:
+    for iShw in range(nShowers[0]):
+      shower = vertex.shower_v.at(iShw)
+      
+      num_shower_hits = shower.size()
+      for iihit in range(0,num_shower_hits):
+        hit = shower.at(iihit)
         eventLarflowCluster.push_back(hit)
         if prongsAreContained:
           hitPt = rt.TVector3(hit[0], hit[1], hit[2])
           prongsAreContained = isFiducialWCSCE(hitPt)
 
       vertexNHits += shower.size()
-      showerIsSecondary[iShw] = vertex.shower_isSecondary_v[iShw]
+      if iShw < vertex.shower_isSecondary_v.size():
+        showerIsSecondary[iShw] = vertex.shower_isSecondary_v[iShw]
+      else:
+        showerIsSecondary[iShw] = -1
+        
       showerNHits[iShw] = shower.size()
       showerCharge[iShw], vertexPixels, vertexCharge = addClusterCharge(iolcv,shower,vertexPixels,vertexCharge, 10.)
       showerCosTheta[iShw] = getCosThetaBeamShower(vertex.shower_trunk_v[iShw])
