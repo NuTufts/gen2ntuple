@@ -341,6 +341,7 @@ maxNKpts = 500
 maxNTrks = 100
 maxNShwrs = 100
 maxNParts = 1000
+haveReco = array('i', [0])
 fileid = array('i', [0])
 run = array('i', [0])
 subrun = array('i', [0])
@@ -516,6 +517,7 @@ if args.isMC:
   showerTrueMuPurity = array('f', maxNShwrs*[0.])
   showerTruePiPurity = array('f', maxNShwrs*[0.])
   showerTruePrPurity = array('f', maxNShwrs*[0.])
+eventTree.Branch("haveReco", haveReco, 'haveReco/I')
 eventTree.Branch("fileid", fileid, 'fileid/I')
 eventTree.Branch("run", run, 'run/I')
 eventTree.Branch("subrun", subrun, 'subrun/I')
@@ -968,11 +970,13 @@ for filepair in files:
     #  nTrueSimParts[0] = -1
     print("done with entry MC variables")
 
+    run[0] = ioll.run_id()
+    subrun[0] = ioll.subrun_id()
+    event[0] = ioll.event_id()
+
     #initialize reco variables
+    haveReco[0] = 0
     fileid[0] = -1
-    run[0] = -1
-    subrun[0] = -1
-    event[0] = -1
     if not args.noKeypoints:
       nKeypoints[0] = 0
     foundVertex[0] = 0
@@ -1008,15 +1012,13 @@ for filepair in files:
       iolcv.save_entry()
       continue
 
+    haveReco[0] = 1
     kpst.GetEntry(ientry)
 
     for tag in filepair[0].split("_"):
       if 'fileid' in tag:
         fileid[0] = int(tag.replace("fileid",""))
         break
-    run[0] = kpst.run
-    subrun[0] = kpst.subrun
-    event[0] = kpst.event
 
     if not args.noKeypoints:
       for kp in kpst.kpc_nu_v:
