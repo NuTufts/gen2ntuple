@@ -175,7 +175,7 @@ These variables are not included for data.
 * __trueSimPartProcess__: Integer indicating the process by which a detsim-tracked particle was created. 0 for primary particles from neutrino interaction, 1 for particles produced in a decay, 2 for all other processes
 * __trueSimPart{X,Y,Z}__: SCE corrected X,Y,Z coordinates (in cm) of true detsim-tracked particle start position. Array of length nTrueSimParts
 * __trueSimPartEDep{X,Y,Z}__: SCE corrected X,Y,Z coordinates (in cm) of point at which detsim-tracked particle begins depositing energy. Point of first photo-conversion for photons, identical to trueSimPart{X,Y,Z} for all other particles. Array of length nTrueSimParts
-* __trueSimPart{Px,Py,Pz,E}__: initial 4-momentum of true primary particle in MeV/c for 3-momentum coordinates and MeV for total energy. Array of length nTrueSimParts
+* __trueSimPart{Px,Py,Pz,E}__: initial 4-momentum of detsim-tracked particles in MeV/c for 3-momentum coordinates and MeV for total energy. Array of length nTrueSimParts
 * __trueSimPartContained__: integer indicating if detsim-tracked particle was contained inside the detector. 1 if SCE corrected true end position is inside wire cell fiducial volume, 0 otherwise
 
 ### EventTree reconstruction variables:
