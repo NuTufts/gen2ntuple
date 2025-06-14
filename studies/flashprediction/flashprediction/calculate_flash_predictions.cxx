@@ -190,6 +190,9 @@ int main(int argc, char** argv) {
     std::vector<float> obs_pe_per_pmt;
     
     // Vectors for vertex-specific predictions (all particles)
+    std::vector<float> reco_vertex_x_v;
+    std::vector<float> reco_vertex_y_v;
+    std::vector<float> reco_vertex_z_v;
     std::vector<float> pred_total_pe_all_v;
     std::vector<std::vector<float>> pred_pe_per_pmt_all_v; // 2D vector: [vertex][pmt]
     std::vector<int> n_tracks_all_v;
@@ -238,6 +241,9 @@ int main(int argc, char** argv) {
     output_tree->Branch("obs_pe_per_pmt", &obs_pe_per_pmt);
     
     // Prediction branches (vectors)
+    output_file->Branch("reco_vertex_x", &reco_vertex_x_v);
+    output_file->Branch("reco_vertex_y", &reco_vertex_y_v);
+    output_file->Branch("reco_vertex_z", &reco_vertex_z_v);
     output_tree->Branch("pred_total_pe_all", &pred_total_pe_all_v);
     output_tree->Branch("pred_pe_per_pmt_all", &pred_pe_per_pmt_all_v);
     output_tree->Branch("n_tracks_all", &n_tracks_all_v);
@@ -330,6 +336,9 @@ int main(int argc, char** argv) {
         total_charge_all_v.clear();
         total_photons_all_v.clear();
         
+        reco_vertex_x_v.clear();
+        reco_vertex_y_v.clear();
+        reco_vertex_z_v.clear();
         pred_total_pe_primary_v.clear();
         pred_pe_per_pmt_primary_v.clear();
         n_tracks_primary_v.clear();
@@ -477,6 +486,12 @@ int main(int argc, char** argv) {
             for (size_t vtx_idx = 0; vtx_idx < nuvetoed_v->size(); vtx_idx++) {
                 
                 const auto& vertex_candidate = nuvetoed_v->at(vtx_idx);
+
+                // fill the reco vertex position
+                // will use this to match to the vertex selected in the ntuple-maker
+                reco_vertex_x_v.push_back(vertex_candidate.pos[0]);
+                reco_vertex_y_v.push_back(vertex_candidate.pos[1]);
+                reco_vertex_z_v.push_back(vertex_candidate.pos[2]);
                 
                 // Initialize default values for this vertex
                 pred_total_pe_all_v.push_back(-1.0);
