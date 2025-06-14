@@ -40,9 +40,8 @@ This project provides a C++ executable that calculates flash predictions for eac
 
 ### Running the executable
 
-**Vectorized version (recommended for ntuple alignment):**
 ```bash
-./build/flashprediction/calculate_flash_predictions_vectorized \
+./build/flashprediction/calculate_flash_predictions \
   -d dlmerged_file.root \
   -r reco_file.root \
   -o output_predictions.root \
@@ -53,18 +52,6 @@ This project provides a C++ executable that calculates flash predictions for eac
   [-tb]
 ```
 
-**Original version (one entry per vertex):**
-```bash
-./build/flashprediction/calculate_flash_predictions \
-  -d dlmerged_file.root \
-  -r reco_file.root \
-  -o output_predictions.root \
-  [-n num_entries] \
-  [-s start_entry] \
-  [-t adc_threshold] \
-  [-v]
-```
-
 **Parameters:**
 - `-d, --dlmerged`: Input dlmerged ROOT file (contains ADC images and opflash)
 - `-r, --reco`: Input reco file with KPSRecoManagerTree
@@ -73,7 +60,7 @@ This project provides a C++ executable that calculates flash predictions for eac
 - `-s, --start-entry`: Starting entry (default: 0)
 - `-t, --threshold`: ADC threshold (default: 10.0)
 - `-v, --verbose`: Enable verbose output
-- `-tb, --tickbackward`: Use tick backward direction (vectorized version only)
+- `-tb, --tickbackward`: Use tick backward direction
 
 ### Submitting batch jobs
 
@@ -91,28 +78,16 @@ python3 submit_flash_prediction_jobs.py \
 
 ### Combining outputs
 
-**For vectorized output files (recommended):**
 ```bash
-python3 combine_flash_predictions_vectorized.py \
+python3 combine_flash_predictions.py \
   -i output1.root output2.root ... \
   -o combined_friend_tree.root \
   [-n original_ntuple.root]
 ```
 
-**For original format output files:**
-```bash
-python3 combine_flash_predictions.py \
-  -i output1.root output2.root ... \
-  -o combined_friend_tree.root \
-  [-n original_ntuple.root] \
-  [-m max_vertices_per_entry]
-```
-
 ## Output Structure
 
-### Vectorized Format (Recommended)
-
-The vectorized output stores all vertex candidates per event in `std::vector` branches:
+The output stores all vertex candidates per event in `std::vector` branches for perfect ntuple alignment:
 
 **Event-level branches:**
 - `entry`, `run`, `subrun`, `event`: Event identification
@@ -133,12 +108,6 @@ The vectorized output stores all vertex candidates per event in `std::vector` br
 - `pe_diff_all`, `pe_diff_primary`: Vectors of PE differences
 - `pe_ratio_all`, `pe_ratio_primary`: Vectors of PE ratios
 - `prediction_success_all`, `prediction_success_primary`: Vectors of success flags
-
-### Original Format
-
-The original output creates one entry per vertex candidate with these branches:
-- All the same variables as above, but as scalars/arrays instead of vectors
-- `vertex_idx`: Index of vertex candidate within the event
 
 ## Using as Friend Tree
 
