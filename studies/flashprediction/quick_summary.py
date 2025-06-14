@@ -24,11 +24,22 @@ def print_compact_summary(filename, max_entries=10):
     
     print(f"\nFlash Prediction Summary for: {filename}")
     print(f"Total entries: {tree.GetEntries()}")
-    print("\n" + "="*120)
-    print(f"{'Entry':>5} {'Run':>6} {'SubRun':>6} {'Event':>6} {'#Vtx':>4} "
-          f"{'ObsPE':>8} {'Vtx0_PE':>8} {'Ratio0':>7} {'Sinkhorn0':>10} "
-          f"{'Vtx1_PE':>8} {'Ratio1':>7} {'Status':>10}")
-    print("="*120)
+    
+    # Check if MC truth branches are available
+    has_mc_branches = hasattr(tree, 'has_mc_truth')
+    
+    if has_mc_branches:
+        print("\n" + "="*140)
+        print(f"{'Entry':>5} {'Run':>6} {'SubRun':>6} {'Event':>6} {'#Vtx':>4} "
+              f"{'ObsPE':>8} {'Vtx0_PE':>8} {'Ratio0':>7} {'Sinkhorn0':>10} "
+              f"{'Dist0':>7} {'Vtx1_PE':>8} {'Ratio1':>7} {'Status':>10}")
+        print("="*140)
+    else:
+        print("\n" + "="*120)
+        print(f"{'Entry':>5} {'Run':>6} {'SubRun':>6} {'Event':>6} {'#Vtx':>4} "
+              f"{'ObsPE':>8} {'Vtx0_PE':>8} {'Ratio0':>7} {'Sinkhorn0':>10} "
+              f"{'Vtx1_PE':>8} {'Ratio1':>7} {'Status':>10}")
+        print("="*120)
     
     # Loop through entries
     n_entries = min(max_entries, tree.GetEntries())
@@ -65,10 +76,22 @@ def print_compact_summary(filename, max_entries=10):
                     sinkhorn0_str = f"{'--':>10}"
             else:
                 sinkhorn0_str = f"{'--':>10}"
+            
+            # Distance to true vertex (if MC mode)
+            if has_mc_branches and hasattr(tree, 'vtx_dist_to_true') and tree.has_mc_truth:
+                if len(tree.vtx_dist_to_true) > 0:
+                    dist0 = tree.vtx_dist_to_true[0]
+                    dist0_str = f"{dist0:7.1f}"
+                else:
+                    dist0_str = f"{'--':>7}"
+            elif has_mc_branches:
+                dist0_str = f"{'--':>7}"
         else:
             vtx0_pe_str = f"{'--':>8}"
             ratio0_str = f"{'--':>7}"
             sinkhorn0_str = f"{'--':>10}"
+            if has_mc_branches:
+                dist0_str = f"{'--':>7}"
         
         # Second vertex (if exists)
         if tree.n_vertices > 1 and len(tree.pred_total_pe_all) > 1:
@@ -95,13 +118,20 @@ def print_compact_summary(filename, max_entries=10):
             status = "Neither"
         
         # Print row
-        print(f"{entry_str} {obs_pe_str} {vtx0_pe_str} {ratio0_str} {sinkhorn0_str} "
-              f"{vtx1_pe_str} {ratio1_str} {status:>10}")
+        if has_mc_branches:
+            print(f"{entry_str} {obs_pe_str} {vtx0_pe_str} {ratio0_str} {sinkhorn0_str} "
+                  f"{dist0_str} {vtx1_pe_str} {ratio1_str} {status:>10}")
+        else:
+            print(f"{entry_str} {obs_pe_str} {vtx0_pe_str} {ratio0_str} {sinkhorn0_str} "
+                  f"{vtx1_pe_str} {ratio1_str} {status:>10}")
     
     if tree.GetEntries() > max_entries:
         print(f"... ({tree.GetEntries() - max_entries} more entries)")
     
-    print("="*120)
+    if has_mc_branches:
+        print("="*140)
+    else:
+        print("="*120)
     
     # Quick statistics
     total_vertices = 0

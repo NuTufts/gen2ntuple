@@ -37,6 +37,18 @@
 #include "larflow/Reco/NuVertexFlashPrediction.h"
 #include "larflow/Reco/SinkhornFlashDivergence.h"
 
+// ublarcvapp (for MC truth)
+#include "ublarcvapp/MCTools/NeutrinoVertex.h"
+
+// larlite (for MC truth data)
+#include "DataFormat/mctruth.h"
+
+// larutil (for SCE correction)
+#include "LArUtil/SpaceChargeMicroBooNE.h"
+
+// ROOT (for TVector3)
+#include "TVector3.h"
+
 void printUsage() {
     std::cout << "Usage: calculate_flash_predictions [options]" << std::endl;
     std::cout << "\nRequired options:" << std::endl;
@@ -49,6 +61,7 @@ void printUsage() {
     std::cout << "  -t, --threshold    <float>   ADC threshold (default: 10.0)" << std::endl;
     std::cout << "  -v, --verbose               Enable verbose output" << std::endl;
     std::cout << "  -tb, --tickbackward         Use tick backward direction" << std::endl;
+    std::cout << "  -mc, --mc                   Enable MC mode (calculate distance to true vertex)" << std::endl;
     std::cout << "  -h, --help                  Show this help message" << std::endl;
 }
 
@@ -63,6 +76,7 @@ int main(int argc, char** argv) {
     float adc_threshold = 10.0;
     bool verbose = false;
     bool tickbackward = false;
+    bool is_mc = false;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -91,6 +105,9 @@ int main(int argc, char** argv) {
         else if (arg == "-tb" || arg == "--tickbackward") {
             tickbackward = true;
         }
+        else if (arg == "-mc" || arg == "--mc") {
+            is_mc = true;
+        }
         else if (arg == "-h" || arg == "--help") {
             printUsage();
             return 0;
@@ -110,6 +127,7 @@ int main(int argc, char** argv) {
     std::cout << "Reco file: " << reco_file << std::endl;
     std::cout << "Output file: " << output_file << std::endl;
     std::cout << "ADC threshold: " << adc_threshold << std::endl;
+    std::cout << "MC mode: " << (is_mc ? "enabled" : "disabled") << std::endl;
     
     // Open input files
     // 1. Open reco file with KPSRecoManagerTree
@@ -153,6 +171,9 @@ int main(int argc, char** argv) {
     
     std::cout << "Processing entries " << start_entry << " to " << end_entry - 1 
               << " (total: " << end_entry - start_entry << ")" << std::endl;
+    if ( is_mc ) {
+        std::cout << "The file is indicated to be a simulated (aka a MC) file." << std::endl;
+    }
     
     // Create output file and tree
     TFile* output_tfile = TFile::Open(output_file.c_str(), "RECREATE");
@@ -196,6 +217,11 @@ int main(int argc, char** argv) {
     std::vector<bool> prediction_success_all_v;
     std::vector<bool> prediction_success_primary_v;
     
+    // MC truth vectors (only used if is_mc is true)
+    std::vector<float> vtx_dist_to_true_v;
+    float true_vtx_x, true_vtx_y, true_vtx_z;
+    bool has_mc_truth;
+    
     // Set up branches
     // Event-level branches
     output_tree->Branch("entry", &entry, "entry/I");
@@ -238,11 +264,20 @@ int main(int argc, char** argv) {
     output_tree->Branch("prediction_success_all", &prediction_success_all_v);
     output_tree->Branch("prediction_success_primary", &prediction_success_primary_v);
     
+    // MC truth branches (only if MC mode enabled)
+    if (is_mc) {
+        output_tree->Branch("vtx_dist_to_true", &vtx_dist_to_true_v);
+        output_tree->Branch("true_vtx_x", &true_vtx_x, "true_vtx_x/F");
+        output_tree->Branch("true_vtx_y", &true_vtx_y, "true_vtx_y/F");
+        output_tree->Branch("true_vtx_z", &true_vtx_z, "true_vtx_z/F");
+        output_tree->Branch("has_mc_truth", &has_mc_truth, "has_mc_truth/O");
+    }
+    
     // Initialize flash predictor and Sinkhorn calculator
     larflow::reco::NuVertexFlashPrediction predictor;
     larflow::reco::SinkhornFlashDivergence sinkhorn_calc;
-    if (verbose)
-        sinkhorn_calc.set_verbosity(larcv::msg::kINFO);
+    //if (verbose)
+    //   sinkhorn_calc.set_verbosity(larcv::msg::kINFO);
     
     // Configure flash predictor with standard parameters
     predictor.setChargeToPhotonParams(
@@ -266,6 +301,19 @@ int main(int argc, char** argv) {
     
     // Regularization parameters for Sinkhorn divergence
     float sinkhorn_regularizations[3] = {0.1, 1.0, 10.0};
+    
+    // Initialize MC truth tools (only if MC mode enabled)
+    ublarcvapp::mctools::NeutrinoVertex* mc_nu_vertexer = nullptr;
+    larutil::SpaceChargeMicroBooNE* sce = nullptr;
+    
+    if (is_mc) {
+        mc_nu_vertexer = new ublarcvapp::mctools::NeutrinoVertex();
+        sce = new larutil::SpaceChargeMicroBooNE();
+        
+        if (verbose) {
+            std::cout << "MC truth tools initialized" << std::endl;
+        }
+    }
     
     // Process entries
     for (int ientry = start_entry; ientry < end_entry; ientry++) {
@@ -299,6 +347,11 @@ int main(int argc, char** argv) {
         prediction_success_all_v.clear();
         prediction_success_primary_v.clear();
         
+        // Clear MC truth vectors (only if MC mode enabled)
+        if (is_mc) {
+            vtx_dist_to_true_v.clear();
+        }
+        
         obs_pe_per_pmt.clear();
         obs_pe_per_pmt.resize(32, 0.0);
         
@@ -314,6 +367,48 @@ int main(int argc, char** argv) {
         run = ioll.run_id();
         subrun = ioll.subrun_id();
         event = ioll.event_id();
+        
+        // Get MC truth information (only if MC mode enabled)
+        TVector3 true_vtx_pos(0, 0, 0);
+        has_mc_truth = false;
+        
+        if (is_mc) {
+            try {
+                // Get MC truth data
+                auto ev_mctruth = (larlite::event_mctruth*)(ioll.get_data(larlite::data::kMCTruth, "generator"));
+                std::cout << "ev_mctruth->size()=" << ev_mctruth->size() << std::endl;
+                
+                if (ev_mctruth && ev_mctruth->size() > 0) {
+                    // Get true neutrino vertex position with SCE correction
+                    std::vector<float> mc_nu_vertex(3,0);
+                    mc_nu_vertex = mc_nu_vertexer->getPos3DwSCE(ioll, sce); // returns (x,y,z,tick)
+                    
+                    if (mc_nu_vertex.size() >= 3) {
+                        true_vtx_pos.SetXYZ(mc_nu_vertex[0], mc_nu_vertex[1], mc_nu_vertex[2]);
+                        true_vtx_x = true_vtx_pos.X();
+                        true_vtx_y = true_vtx_pos.Y();
+                        true_vtx_z = true_vtx_pos.Z();
+                        has_mc_truth = true;
+                        
+                        if (verbose) {
+                            std::cout << "True vertex at (" << true_vtx_x << ", " << true_vtx_y << ", " << true_vtx_z << ")" << std::endl;
+                        }
+                    }
+                    else {
+                        std::cerr << "Error: getPos3DwSCE returns a bad mc nu vertex position." << std::endl;
+                        std::cerr << "mc_nu_vertex.size()==" << mc_nu_vertex.size() << std::endl;
+                    }
+                }
+            } catch (const std::exception& e) {
+                if (verbose) {
+                    std::cerr << "Warning: MC truth processing failed for entry " << ientry << ": " << e.what() << std::endl;
+                }
+                has_mc_truth = false;
+                true_vtx_x = -999.0;
+                true_vtx_y = -999.0;
+                true_vtx_z = -999.0;
+            }
+        }
         
         // Get ADC images
         auto ev_img = (larcv::EventImage2D*)(ioman.get_data(larcv::kProductImage2D, "wire"));
@@ -369,6 +464,14 @@ int main(int argc, char** argv) {
             }
         }
         
+        // Initialize MC truth event-level variables when not in MC mode
+        if (!is_mc) {
+            has_mc_truth = false;
+            true_vtx_x = -999.0;
+            true_vtx_y = -999.0;
+            true_vtx_z = -999.0;
+        }
+        
         if (has_vertices) {
             // Process each vertex candidate
             for (size_t vtx_idx = 0; vtx_idx < nuvetoed_v->size(); vtx_idx++) {
@@ -406,6 +509,23 @@ int main(int argc, char** argv) {
                 pe_diff_primary_v.push_back(-999.0);
                 pe_ratio_all_v.push_back(-999.0);
                 pe_ratio_primary_v.push_back(-999.0);
+                
+                // Calculate distance to true vertex (only if MC mode enabled and MC truth available)
+                if (is_mc && has_mc_truth) {
+                    // Calculate 3D Euclidean distance
+                    float dx = vertex_candidate.pos[0] - true_vtx_pos.X();
+                    float dy = vertex_candidate.pos[1] - true_vtx_pos.Y();
+                    float dz = vertex_candidate.pos[2] - true_vtx_pos.Z();
+                    float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    vtx_dist_to_true_v.push_back(distance);
+                    
+                    if (verbose) {
+                        std::cout << "  Vertex[" << vtx_idx << "] distance to true: " << distance << " cm" << std::endl;
+                    }
+                } else if (is_mc) {
+                    // MC mode but no truth available
+                    vtx_dist_to_true_v.push_back(-999.0);
+                }
                 
                 // Prediction with all particles
                 try {
@@ -528,7 +648,11 @@ int main(int argc, char** argv) {
                 
                 if (verbose) {
                     std::cout << "  Vertex[" << vtx_idx << "] pred_PE(all)=" << pred_total_pe_all_v[vtx_idx] 
-                              << " pred_PE(primary)=" << pred_total_pe_primary_v[vtx_idx] << std::endl;
+                              << " pred_PE(primary)=" << pred_total_pe_primary_v[vtx_idx];
+                    if (is_mc && has_mc_truth) {
+                        std::cout << " dist_to_true=" << vtx_dist_to_true_v[vtx_idx] << " cm";
+                    }
+                    std::cout << std::endl;
                 }
                 
             } // end loop over vertices
@@ -550,6 +674,12 @@ int main(int argc, char** argv) {
     reco_tfile->Close();
     ioman.finalize();
     ioll.close();
+    
+    // Cleanup MC truth tools
+    if (is_mc) {
+        delete mc_nu_vertexer;
+        delete sce;
+    }
     
     std::cout << "\nOutput saved to: " << output_file << std::endl;
     

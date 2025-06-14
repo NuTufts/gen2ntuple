@@ -49,7 +49,8 @@ This project provides a C++ executable that calculates flash predictions for eac
   [-s start_entry] \
   [-t adc_threshold] \
   [-v] \
-  [-tb]
+  [-tb] \
+  [-mc]
 ```
 
 **Parameters:**
@@ -61,6 +62,7 @@ This project provides a C++ executable that calculates flash predictions for eac
 - `-t, --threshold`: ADC threshold (default: 10.0)
 - `-v, --verbose`: Enable verbose output
 - `-tb, --tickbackward`: Use tick backward direction
+- `-mc, --mc`: Enable MC mode (calculate distance to true neutrino vertex)
 
 ### Submitting batch jobs
 
@@ -108,6 +110,11 @@ The output stores all vertex candidates per event in `std::vector` branches for 
 - `pe_diff_all`, `pe_diff_primary`: Vectors of PE differences
 - `pe_ratio_all`, `pe_ratio_primary`: Vectors of PE ratios
 - `prediction_success_all`, `prediction_success_primary`: Vectors of success flags
+
+**MC Truth branches (only present when using `-mc` flag):**
+- `vtx_dist_to_true`: Vector of distances from each vertex candidate to true neutrino vertex (cm)
+- `true_vtx_x`, `true_vtx_y`, `true_vtx_z`: True neutrino vertex position (event-level)
+- `has_mc_truth`: Boolean flag indicating if MC truth information was successfully extracted
 
 ## Using as Friend Tree
 
@@ -167,6 +174,20 @@ The flash predictor uses the following parameters:
    ```cpp
    tree->Draw("n_vertices", "has_vertices");
    tree->Draw("pred_total_pe_all", "n_vertices>1", "para"); // Events with multiple vertices
+   ```
+
+5. **MC Truth analysis (requires `-mc` flag during processing)**:
+   ```cpp
+   // Distance to true vertex vs Sinkhorn divergence
+   tree->Draw("sinkhorn_div_all[0]:vtx_dist_to_true[0]", 
+              "has_mc_truth && n_vertices>0 && prediction_success_all[0]", "colz");
+   
+   // Find best vertex candidate (closest to true)
+   tree->Draw("vtx_dist_to_true", "has_mc_truth", "");
+   
+   // Correlation between distance to true vertex and PE ratio
+   tree->Draw("pe_ratio_all[0]:vtx_dist_to_true[0]", 
+              "has_mc_truth && n_vertices>0 && prediction_success_all[0]", "colz");
    ```
 
 ### Original Format

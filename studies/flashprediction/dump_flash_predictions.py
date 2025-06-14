@@ -64,6 +64,12 @@ def dump_entry_details(tree, entry_num, max_vertices=3):
     print(f"  Has vertices: {tree.has_vertices}")
     print(f"  Has flash: {tree.has_flash}")
     
+    # MC truth info (if available)
+    if hasattr(tree, 'has_mc_truth'):
+        print(f"  Has MC truth: {tree.has_mc_truth}")
+        if tree.has_mc_truth:
+            print(f"  True vertex: ({tree.true_vtx_x:.2f}, {tree.true_vtx_y:.2f}, {tree.true_vtx_z:.2f}) cm")
+    
     # Observed flash info
     print(f"\nObserved Flash:")
     print(f"  Total PE: {tree.obs_total_pe:.2f}")
@@ -120,6 +126,11 @@ def dump_entry_details(tree, entry_num, max_vertices=3):
                 if tree.pe_diff_primary[vtx] > -900:  # Check for valid value
                     print(f"      PE difference: {tree.pe_diff_primary[vtx]:.2f}")
                     print(f"      PE ratio: {tree.pe_ratio_primary[vtx]:.4f}")
+            
+            # MC truth distance (if available)
+            if hasattr(tree, 'vtx_dist_to_true') and hasattr(tree, 'has_mc_truth'):
+                if tree.has_mc_truth and vtx < len(tree.vtx_dist_to_true):
+                    print(f"    Distance to true vertex: {tree.vtx_dist_to_true[vtx]:.2f} cm")
         
         if tree.n_vertices > max_vertices:
             print(f"\n  ... and {tree.n_vertices - max_vertices} more vertices")
