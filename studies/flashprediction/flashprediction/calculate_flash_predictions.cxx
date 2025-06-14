@@ -39,6 +39,9 @@
 struct FlashPredictionResult {
     int entry;
     int vertex_idx;
+    int run;
+    int subrun;
+    int event;
     
     // Predictions using all particles
     float pred_total_pe_all;
@@ -61,7 +64,7 @@ struct FlashPredictionResult {
     float obs_pe_per_pmt[32];
     float obs_time;
     
-    // Metrics
+    // Metrics: store values per nu candidate vertex, if needed.
     float sinkhorn_div_all[3];      // For regularization params 0.1, 1.0, 10.0
     float sinkhorn_div_primary[3];
     float pe_diff_all;              // pred_total_pe_all - obs_total_pe
@@ -100,6 +103,7 @@ int main(int argc, char** argv) {
     int start_entry = 0;
     float adc_threshold = 10.0;
     bool verbose = false;
+    bool tickbackward = false;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -124,6 +128,9 @@ int main(int argc, char** argv) {
         }
         else if (arg == "-v" || arg == "--verbose") {
             verbose = true;
+        }
+        else if (arg == "-tb" || arg == "--tickbackward") {
+            tickbackward = true;
         }
         else if (arg == "-h" || arg == "--help") {
             printUsage();
@@ -164,8 +171,13 @@ int main(int argc, char** argv) {
     kps_tree->SetBranchAddress("nuvetoed_v", &nuvetoed_v);
     
     // 2. Set up larcv IOManager for ADC images
-    larcv::IOManager ioman(larcv::IOManager::kREAD);
+    auto tick_direction = larcv::IOManager::kTickForward;
+    if ( tickbackward )
+      tick_direction = larcv::IOManager::kTickBackward;
+    larcv::IOManager ioman(larcv::IOManager::kREAD,"ioman",tick_direction);
     ioman.add_in_file(dlmerged_file);
+    if ( tickbackward )
+        ioman.reverse_all_products();
     ioman.initialize();
     
     // 3. Set up larlite storage manager for opflash
@@ -189,49 +201,66 @@ int main(int argc, char** argv) {
     
     // Create result structure and set up branches
     FlashPredictionResult result;
+
+
     
+    // event indexing variables
+    output_tree->Branch("run",    &result.run,    "run/I");
+    output_tree->Branch("subrun", &result.subrun, "subrun/I");
+    output_tree->Branch("event",  &result.event,  "event/I");
+
     // Basic info branches
     output_tree->Branch("entry", &result.entry, "entry/I");
     output_tree->Branch("vertex_idx", &result.vertex_idx, "vertex_idx/I");
-    
-    // All particles prediction branches
-    output_tree->Branch("pred_total_pe_all", &result.pred_total_pe_all, "pred_total_pe_all/F");
-    output_tree->Branch("pred_pe_per_pmt_all", result.pred_pe_per_pmt_all, "pred_pe_per_pmt_all[32]/F");
-    output_tree->Branch("n_tracks_all", &result.n_tracks_all, "n_tracks_all/I");
-    output_tree->Branch("n_showers_all", &result.n_showers_all, "n_showers_all/I");
-    output_tree->Branch("total_charge_all", &result.total_charge_all, "total_charge_all/F");
-    output_tree->Branch("total_photons_all", &result.total_photons_all, "total_photons_all/F");
-    
-    // Primary particles prediction branches
-    output_tree->Branch("pred_total_pe_primary", &result.pred_total_pe_primary, "pred_total_pe_primary/F");
-    output_tree->Branch("pred_pe_per_pmt_primary", result.pred_pe_per_pmt_primary, "pred_pe_per_pmt_primary[32]/F");
-    output_tree->Branch("n_tracks_primary", &result.n_tracks_primary, "n_tracks_primary/I");
-    output_tree->Branch("n_showers_primary", &result.n_showers_primary, "n_showers_primary/I");
-    output_tree->Branch("total_charge_primary", &result.total_charge_primary, "total_charge_primary/F");
-    output_tree->Branch("total_photons_primary", &result.total_photons_primary, "total_photons_primary/F");
-    
+
     // Observed flash branches
     output_tree->Branch("obs_total_pe", &result.obs_total_pe, "obs_total_pe/F");
     output_tree->Branch("obs_pe_per_pmt", result.obs_pe_per_pmt, "obs_pe_per_pmt[32]/F");
     output_tree->Branch("obs_time", &result.obs_time, "obs_time/F");
     
-    // Metric branches
-    output_tree->Branch("sinkhorn_div_all", result.sinkhorn_div_all, "sinkhorn_div_all[3]/F");
-    output_tree->Branch("sinkhorn_div_primary", result.sinkhorn_div_primary, "sinkhorn_div_primary[3]/F");
-    output_tree->Branch("pe_diff_all", &result.pe_diff_all, "pe_diff_all/F");
-    output_tree->Branch("pe_diff_primary", &result.pe_diff_primary, "pe_diff_primary/F");
-    output_tree->Branch("pe_ratio_all", &result.pe_ratio_all, "pe_ratio_all/F");
-    output_tree->Branch("pe_ratio_primary", &result.pe_ratio_primary, "pe_ratio_primary/F");
     
-    // Status branches
-    output_tree->Branch("has_vertex", &result.has_vertex, "has_vertex/O");
-    output_tree->Branch("has_flash", &result.has_flash, "has_flash/O");
-    output_tree->Branch("prediction_success_all", &result.prediction_success_all, "prediction_success_all/O");
-    output_tree->Branch("prediction_success_primary", &result.prediction_success_primary, "prediction_success_primary/O");
+    // All particles prediction branches: fill a vector for all these variables
+    std::vector<float> pred_total_pe_all;
+    std::vector<float> pred_pe_per_pmt_all;
+    std::vector<int>   n_tracks_all;
+    std::vector<int>   n_showers_all;
+    std::vector<float> total_charge_all;
+    std::vector<float> total_photons_all;
+    output_tree->Branch("pred_total_pe_all",   &pred_total_pe_all);
+    output_tree->Branch("pred_pe_per_pmt_all", &pred_pe_per_pmt_all);
+    output_tree->Branch("n_tracks_all",        &n_tracks_all );
+    output_tree->Branch("n_showers_all",       &n_showers_all );
+    output_tree->Branch("total_charge_all",    &total_charge_all );
+    output_tree->Branch("total_photons_all",   &total_photons_all );
+    
+    // // Primary particles prediction branches: fill a vector for all these variables
+    // output_tree->Branch("pred_total_pe_primary", &result.pred_total_pe_primary, "pred_total_pe_primary/F");
+    // output_tree->Branch("pred_pe_per_pmt_primary", result.pred_pe_per_pmt_primary, "pred_pe_per_pmt_primary[32]/F");
+    // output_tree->Branch("n_tracks_primary", &result.n_tracks_primary, "n_tracks_primary/I");
+    // output_tree->Branch("n_showers_primary", &result.n_showers_primary, "n_showers_primary/I");
+    // output_tree->Branch("total_charge_primary", &result.total_charge_primary, "total_charge_primary/F");
+    // output_tree->Branch("total_photons_primary", &result.total_photons_primary, "total_photons_primary/F");
+    
+    // // Metric branches: fill a vector for all these variables
+    // output_tree->Branch("sinkhorn_div_all", result.sinkhorn_div_all, "sinkhorn_div_all[3]/F");
+    // output_tree->Branch("sinkhorn_div_primary", result.sinkhorn_div_primary, "sinkhorn_div_primary[3]/F");
+    // output_tree->Branch("pe_diff_all", &result.pe_diff_all, "pe_diff_all/F");
+    // output_tree->Branch("pe_diff_primary", &result.pe_diff_primary, "pe_diff_primary/F");
+    // output_tree->Branch("pe_ratio_all", &result.pe_ratio_all, "pe_ratio_all/F");
+    // output_tree->Branch("pe_ratio_primary", &result.pe_ratio_primary, "pe_ratio_primary/F");
+    
+    // // Status branches: value per event
+    // output_tree->Branch("has_vertex", &result.has_vertex, "has_vertex/O");
+    // output_tree->Branch("has_flash", &result.has_flash, "has_flash/O");
+    // // Status branches: value for each vertex
+    // output_tree->Branch("prediction_success_all", &result.prediction_success_all, "prediction_success_all/O");
+    // output_tree->Branch("prediction_success_primary", &result.prediction_success_primary, "prediction_success_primary/O");
     
     // Initialize flash predictor and Sinkhorn calculator
     larflow::reco::NuVertexFlashPrediction predictor;
     larflow::reco::SinkhornFlashDivergence sinkhorn_calc;
+    if ( verbose )
+      sinkhorn_calc.set_verbosity( larcv::msg::kINFO );
     
     // Configure flash predictor with standard parameters
     predictor.setChargeToPhotonParams(
@@ -287,8 +316,19 @@ int main(int argc, char** argv) {
         
         // Get observed opflash
         auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, "simpleFlashBeam"));
+        if ( ev_opflash==nullptr ) {
+            std::cout << "Could not get opflash container" << std::endl;
+        }
+        else {
+            std::cout << "Number of opflashes: " << ev_opflash->size() << std::endl;
+        }
         
         result.has_flash = (ev_opflash && ev_opflash->size() > 0);
+
+        // set entry index
+        result.run    = ioll.run_id();
+        result.subrun = ioll.subrun_id();
+        result.event  = ioll.event_id();
         
         if (result.has_flash) {
             // Use the first flash (highest PE)
@@ -300,9 +340,23 @@ int main(int argc, char** argv) {
                 result.obs_pe_per_pmt[pmt] = flash.PE(pmt);
             }
         }
+        else {
+            // create flat dummy opflash
+            result.obs_total_pe = 0.0;
+            result.obs_time = -1.0;
+            for (int pmt = 0; pmt < 32; pmt++) {
+                result.obs_pe_per_pmt[pmt] = 1.0/32.0;
+            }
+        }
         
         // Process vertex candidates
         result.has_vertex = (nuvetoed_v && nuvetoed_v->size() > 0);
+        if ( result.has_vertex ) {
+            std::cout << "Number of neutrino candidates: " <<  nuvetoed_v->size() << std::endl;
+        }
+        else {
+            std::cout << "No neutrino candidates made in the event" << std::endl;
+        }
         
         if (!result.has_vertex) {
             // No vertices - fill with defaults and continue
@@ -381,67 +435,84 @@ int main(int argc, char** argv) {
             }
             
             // Calculate metrics if we have both prediction and observation
-            if (result.has_flash && result.obs_total_pe > 0) {
-                
-                // PE differences and ratios
-                if (result.prediction_success_all) {
-                    result.pe_diff_all = result.pred_total_pe_all - result.obs_total_pe;
+            // PE differences and ratios
+            if (result.prediction_success_all) {
+                result.pe_diff_all = result.pred_total_pe_all - result.obs_total_pe;
+                if ( result.obs_total_pe>0.0 ) {
                     result.pe_ratio_all = result.pred_total_pe_all / result.obs_total_pe;
-                    
-                    // Calculate Sinkhorn divergences for all particles
-                    std::vector<float> pred_pe_vec_all(result.pred_pe_per_pmt_all, result.pred_pe_per_pmt_all + 32);
-                    std::vector<float> obs_pe_vec(result.obs_pe_per_pmt, result.obs_pe_per_pmt + 32);
-                    
-                    for (int i = 0; i < 3; i++) {
-                        try {
-                            result.sinkhorn_div_all[i] = sinkhorn_calc.calculateDivergence(
-                                pred_pe_vec_all,
-                                obs_pe_vec,
-                                sinkhorn_regularizations[i],
-                                100,    // max_iterations
-                                1e-6    // tolerance
-                            );
-                        } catch (const std::exception& e) {
-                            if (verbose) {
-                                std::cerr << "Warning: Sinkhorn calculation failed (all, reg=" 
-                                          << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
-                            }
-                            result.sinkhorn_div_all[i] = -1.0; // Invalid value
-                        }
-                    }
+                }
+                else {
+                    result.pe_ratio_all = 0.0;
                 }
                 
-                if (result.prediction_success_primary) {
-                    result.pe_diff_primary = result.pred_total_pe_primary - result.obs_total_pe;
-                    result.pe_ratio_primary = result.pred_total_pe_primary / result.obs_total_pe;
-                    
-                    // Calculate Sinkhorn divergences for primary particles
-                    std::vector<float> pred_pe_vec_primary(result.pred_pe_per_pmt_primary, result.pred_pe_per_pmt_primary + 32);
-                    std::vector<float> obs_pe_vec(result.obs_pe_per_pmt, result.obs_pe_per_pmt + 32);
-                    
-                    for (int i = 0; i < 3; i++) {
-                        try {
-                            result.sinkhorn_div_primary[i] = sinkhorn_calc.calculateDivergence(
-                                pred_pe_vec_primary,
-                                obs_pe_vec,
-                                sinkhorn_regularizations[i],
-                                100,    // max_iterations
-                                1e-6    // tolerance
-                            );
-                        } catch (const std::exception& e) {
-                            if (verbose) {
-                                std::cerr << "Warning: Sinkhorn calculation failed (primary, reg=" 
-                                          << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
-                            }
-                            result.sinkhorn_div_primary[i] = -1.0; // Invalid value
+                // Calculate Sinkhorn divergences for all particles
+                std::vector<float> pred_pe_vec_all(result.pred_pe_per_pmt_all, result.pred_pe_per_pmt_all + 32);
+                std::vector<float> obs_pe_vec(result.obs_pe_per_pmt, result.obs_pe_per_pmt + 32);
+                
+                for (int i = 0; i < 3; i++) {
+                    try {
+                        result.sinkhorn_div_all[i] = sinkhorn_calc.calculateDivergence(
+                            pred_pe_vec_all,
+                            obs_pe_vec,
+                            sinkhorn_regularizations[i],
+                            100,    // max_iterations
+                            1e-6    // tolerance
+                        );
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: Sinkhorn calculation failed (all, reg=" 
+                                      << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
                         }
+                        result.sinkhorn_div_all[i] = -1.0; // Invalid value
+                    }
+                }
+            }
+                
+            if (result.prediction_success_primary) {
+                result.pe_diff_primary = result.pred_total_pe_primary - result.obs_total_pe;
+                result.pe_ratio_primary = result.pred_total_pe_primary / result.obs_total_pe;
+                
+                // Calculate Sinkhorn divergences for primary particles
+                std::vector<float> pred_pe_vec_primary(result.pred_pe_per_pmt_primary, result.pred_pe_per_pmt_primary + 32);
+                std::vector<float> obs_pe_vec(result.obs_pe_per_pmt, result.obs_pe_per_pmt + 32);
+                
+                for (int i = 0; i < 3; i++) {
+                    try {
+                        result.sinkhorn_div_primary[i] = sinkhorn_calc.calculateDivergence(
+                            pred_pe_vec_primary,
+                            obs_pe_vec,
+                            sinkhorn_regularizations[i],
+                            100,    // max_iterations
+                            1e-6    // tolerance
+                        );
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: Sinkhorn calculation failed (primary, reg=" 
+                                      << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
+                        }
+                        result.sinkhorn_div_primary[i] = -1.0; // Invalid value
                     }
                 }
             }
             
+
+            std::cout << "Entry[" << entry << "] Vertex[" << vtx_idx << "]" << std::endl;
+            std::cout << "  total PE: " <<  result.pred_total_pe_all << std::endl;
+            std::cout << "  observed PE: " << result.obs_total_pe << std::endl;
+            if ( result.prediction_success_all ) {
+                std::cout << "  prediction: success" << std::endl;
+            }
+            else {
+                std::cout << "  prediction: failed" << std::endl;
+            }
+            for (int i=0; i<3; i++) {
+                std::cout << "  sinkhorn_div[" << i << ": " << sinkhorn_regularizations[i] << "] " 
+                          << result.sinkhorn_div_all[i] << std::endl;
+            }
+            
             // Fill output tree for this vertex
             output_tree->Fill();
-        }
+        }//end of loop over candidate neutrino vertices
     }
     
     // Write output and cleanup

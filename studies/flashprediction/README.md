@@ -40,6 +40,20 @@ This project provides a C++ executable that calculates flash predictions for eac
 
 ### Running the executable
 
+**Vectorized version (recommended for ntuple alignment):**
+```bash
+./build/flashprediction/calculate_flash_predictions_vectorized \
+  -d dlmerged_file.root \
+  -r reco_file.root \
+  -o output_predictions.root \
+  [-n num_entries] \
+  [-s start_entry] \
+  [-t adc_threshold] \
+  [-v] \
+  [-tb]
+```
+
+**Original version (one entry per vertex):**
 ```bash
 ./build/flashprediction/calculate_flash_predictions \
   -d dlmerged_file.root \
@@ -59,6 +73,7 @@ This project provides a C++ executable that calculates flash predictions for eac
 - `-s, --start-entry`: Starting entry (default: 0)
 - `-t, --threshold`: ADC threshold (default: 10.0)
 - `-v, --verbose`: Enable verbose output
+- `-tb, --tickbackward`: Use tick backward direction (vectorized version only)
 
 ### Submitting batch jobs
 
@@ -76,8 +91,15 @@ python3 submit_flash_prediction_jobs.py \
 
 ### Combining outputs
 
-To create a single friend tree from multiple output files:
+**For vectorized output files (recommended):**
+```bash
+python3 combine_flash_predictions_vectorized.py \
+  -i output1.root output2.root ... \
+  -o combined_friend_tree.root \
+  [-n original_ntuple.root]
+```
 
+**For original format output files:**
 ```bash
 python3 combine_flash_predictions.py \
   -i output1.root output2.root ... \
@@ -88,46 +110,58 @@ python3 combine_flash_predictions.py \
 
 ## Output Structure
 
-The output ROOT tree contains the following branches per vertex:
+### Vectorized Format (Recommended)
 
-**Predictions:**
-- `pred_total_pe_all`: Total predicted PE using all particles
-- `pred_total_pe_primary`: Total predicted PE using primary particles only
-- `pred_pe_per_pmt_all[32]`: Per-PMT predictions (all particles)
-- `pred_pe_per_pmt_primary[32]`: Per-PMT predictions (primary only)
+The vectorized output stores all vertex candidates per event in `std::vector` branches:
 
-**Particle counts:**
-- `n_tracks_all`, `n_showers_all`: Track/shower count (all particles)
-- `n_tracks_primary`, `n_showers_primary`: Track/shower count (primary only)
+**Event-level branches:**
+- `entry`, `run`, `subrun`, `event`: Event identification
+- `n_vertices`: Number of vertex candidates in this event
+- `has_vertices`, `has_flash`: Event-level status flags
+- `obs_total_pe`, `obs_time`: Observed flash info (same for whole event)
+- `obs_pe_per_pmt`: Vector of observed PE per PMT (size 32)
 
-**Metrics:**
-- `sinkhorn_div_all[3]`: Sinkhorn divergence for λ = 0.1, 1.0, 10.0 (all)
-- `sinkhorn_div_primary[3]`: Sinkhorn divergence (primary only)
-- `pe_diff_all/primary`: Predicted - Observed total PE
-- `pe_ratio_all/primary`: Predicted / Observed total PE
+**Vertex-level vector branches (one element per vertex candidate):**
+- `pred_total_pe_all`: Vector of total predicted PE using all particles
+- `pred_total_pe_primary`: Vector of total predicted PE using primary particles only
+- `pred_pe_per_pmt_all`: Vector of vectors (2D) for per-PMT predictions (all particles)
+- `pred_pe_per_pmt_primary`: Vector of vectors (2D) for per-PMT predictions (primary only)
+- `n_tracks_all`, `n_showers_all`: Vectors of track/shower counts (all particles)
+- `n_tracks_primary`, `n_showers_primary`: Vectors of track/shower counts (primary only)
+- `sinkhorn_div_all`: Vector of vectors for Sinkhorn divergence (all particles)
+- `sinkhorn_div_primary`: Vector of vectors for Sinkhorn divergence (primary only)
+- `pe_diff_all`, `pe_diff_primary`: Vectors of PE differences
+- `pe_ratio_all`, `pe_ratio_primary`: Vectors of PE ratios
+- `prediction_success_all`, `prediction_success_primary`: Vectors of success flags
 
-**Observed flash:**
-- `obs_total_pe`: Observed total PE
-- `obs_pe_per_pmt[32]`: Observed PE per PMT
-- `obs_time`: Flash time
+### Original Format
 
-**Status flags:**
-- `has_vertex`: Whether vertex candidates exist
-- `has_flash`: Whether observed flash exists
-- `prediction_success_all/primary`: Whether prediction succeeded
+The original output creates one entry per vertex candidate with these branches:
+- All the same variables as above, but as scalars/arrays instead of vectors
+- `vertex_idx`: Index of vertex candidate within the event
 
 ## Using as Friend Tree
 
+### Vectorized Format
 ```cpp
 // In ROOT
 TFile* f1 = TFile::Open("original_ntuple.root");
 TTree* t1 = (TTree*)f1->Get("EventTree");
-TFile* f2 = TFile::Open("flash_predictions_friend.root");
+TFile* f2 = TFile::Open("flash_predictions_vectorized_friend.root");
 TTree* t2 = (TTree*)f2->Get("FlashPredictionFriend");
 t1->AddFriend(t2);
 
-// Now you can access flash variables in your analysis
-t1->Draw("pred_total_pe_all:obs_total_pe", "has_flash && prediction_success_all");
+// Access first vertex candidate in each event
+t1->Draw("pred_total_pe_all[0]:obs_total_pe", "n_vertices>0 && has_flash");
+
+// Access all vertex candidates (requires loop or special syntax)
+t1->Draw("pred_total_pe_all:obs_total_pe", "has_flash", "para");
+```
+
+### Original Format
+```cpp
+// In ROOT - requires more complex matching since entries don't align
+// Generally recommend using vectorized format for friend trees
 ```
 
 ## Physics Parameters
@@ -142,6 +176,31 @@ The flash predictor uses the following parameters:
 
 ## Analysis Examples
 
+### Vectorized Format
+1. **PE ratio distribution for first vertex**:
+   ```cpp
+   tree->Draw("pe_ratio_all[0]", "n_vertices>0 && has_flash && obs_total_pe>50");
+   ```
+
+2. **Sinkhorn divergence vs PE difference for all vertices**:
+   ```cpp
+   tree->Draw("sinkhorn_div_all[0]:pe_diff_all", 
+              "n_vertices>0 && has_flash", "para colz");
+   ```
+
+3. **Primary vs all particles comparison**:
+   ```cpp
+   tree->Draw("pred_total_pe_primary[0]:pred_total_pe_all[0]", 
+              "n_vertices>0 && prediction_success_all[0] && prediction_success_primary[0]", "colz");
+   ```
+
+4. **Multi-vertex event analysis**:
+   ```cpp
+   tree->Draw("n_vertices", "has_vertices");
+   tree->Draw("pred_total_pe_all", "n_vertices>1", "para"); // Events with multiple vertices
+   ```
+
+### Original Format
 1. **PE ratio distribution**:
    ```cpp
    tree->Draw("pe_ratio_all", "has_flash && obs_total_pe>50");
@@ -151,12 +210,6 @@ The flash predictor uses the following parameters:
    ```cpp
    tree->Draw("sinkhorn_div_all[1]:pe_diff_all", 
               "has_flash && prediction_success_all", "colz");
-   ```
-
-3. **Primary vs all particles comparison**:
-   ```cpp
-   tree->Draw("pred_total_pe_primary:pred_total_pe_all", 
-              "prediction_success_all && prediction_success_primary", "colz");
    ```
 
 ## TO DO:
