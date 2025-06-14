@@ -241,9 +241,9 @@ int main(int argc, char** argv) {
     output_tree->Branch("obs_pe_per_pmt", &obs_pe_per_pmt);
     
     // Prediction branches (vectors)
-    output_file->Branch("reco_vertex_x", &reco_vertex_x_v);
-    output_file->Branch("reco_vertex_y", &reco_vertex_y_v);
-    output_file->Branch("reco_vertex_z", &reco_vertex_z_v);
+    output_tree->Branch("reco_vertex_x", &reco_vertex_x_v);
+    output_tree->Branch("reco_vertex_y", &reco_vertex_y_v);
+    output_tree->Branch("reco_vertex_z", &reco_vertex_z_v);
     output_tree->Branch("pred_total_pe_all", &pred_total_pe_all_v);
     output_tree->Branch("pred_pe_per_pmt_all", &pred_pe_per_pmt_all_v);
     output_tree->Branch("n_tracks_all", &n_tracks_all_v);
