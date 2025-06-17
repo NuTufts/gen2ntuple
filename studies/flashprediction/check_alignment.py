@@ -1,24 +1,22 @@
 import os, sys
 import ROOT as rt
 
-ntuple_goodlist="../../output_goodlist_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.txt"
+#samplename="mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune"
+samplename="mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune"
+#samplename="mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune"
 
-ntuplefile = open(ntuple_goodlist,'r')
-lines = ntuplefile.readlines()
-
-output_dir="./output/"
-output_list = os.listdir(output_dir)
-
-ntuple_gen2="../../ntuple_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.root"
+ntuple_gen2=f"../../ntuple_{samplename}.root"
 gen2file = rt.TFile(ntuple_gen2)
 gen2tree = gen2file.Get("EventTree")
 nentries = gen2tree.GetEntries()
 
-flashpred_filename="flashprediction_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.root"
+flashpred_filename=f"flashprediction_{samplename}.root"
 flashpred_file = rt.TFile(flashpred_filename)
 flashpred_tree = flashpred_file.Get("FlashPredictionTree")
 nentries_flashpred = flashpred_tree.GetEntries()
 
+print("ntuple file: ",ntuple_gen2)
+print("flash prediction: ",flashpred_filename)
 print("Gen2 ntuple nentries: ",nentries)
 print("FlashPred ntuple nentries: ",nentries_flashpred)
 
