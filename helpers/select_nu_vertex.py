@@ -116,12 +116,11 @@ def highest_intime_reco_frac( nuvetoed_v, nuselvar_v, prioritize_by_keypoint=Tru
 
     max_intime_reco_frac = 10.0
     max_kpindex = -1
+    print(f"select_nu_vertex.py highest_intime_reco_frac: num vertices={nvertices}")
     
     for ivtx in range(nvertices):
         nuvtx = nuvetoed_v.at(ivtx)
-        if nuvtx.track_v.size()==0:
-            continue
-        if nuvtx.shower_v.size()==0:
+        if nuvtx.track_v.size()==0 and nuvtx.shower_v.size()==0:
             continue
         
         nusel = nuselvar_v.at(ivtx)

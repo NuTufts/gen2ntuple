@@ -21,6 +21,18 @@ This project provides a C++ executable that calculates flash predictions for eac
 
 ## Building
 
+You must be running inside a container.
+
+One option at Tufts:
+  ```
+  /cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
+  ```
+
+At Fermilab:
+  ```
+  /cvmfs/uboone.opensciencegrid.org/containers/lantern_v2_me_06_03_prod/
+  ```
+
 1. **Setup environment** (required before building):
    ```bash
    cd /path/to/ubdl
@@ -66,17 +78,38 @@ This project provides a C++ executable that calculates flash predictions for eac
 
 ### Submitting batch jobs
 
-For processing many files on a cluster:
+We proceed in a few steps.
 
-```bash
-python3 submit_flash_prediction_jobs.py \
-  -d "/path/to/dlmerged*.root" \
-  -r "/path/to/reco*.root" \
-  -o /path/to/output/dir \
-  [-j jobs_per_file] \
-  [-e entries_per_job] \
-  [--dry-run]
+First, to launch the jobs use `tufts_submit_flash_prediction.sh`.
+
+You'll need to configure the jobs to run for a sample. Example:
 ```
+# mcc9_v28_wctagger_bnb5e19 : run 1 open data
+# number of files: 11681
+NFILES=40
+# number of jobs=293
+SAMPLENAME=mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune
+RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune.txt
+TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_bnb5e19.txt
+MCFLAG=""
+```
+
+Note that we refer to filelists that help index the source image files ("merged_dlreco") and result of the lantern reco files ("kpsrecoana").
+
+Next, we use ROOT's hadd utility to merge the files made by each job.
+  ```
+  python3 run_hadd.py
+  ```
+
+Next, we check to see if these files are aligned properly with core ntuple files (if we've retained the "sub"-ntuple files.
+  ```
+  python3 match_ntuple_files.py
+  ```
+If all sub-ntuple files align, it'll use hadd to merged these into a final flash prediction file for the sample.
+
+Finally, we use a script to check to see that each event in the ntuple and flash prediction tree
+comes from the same event indexed by (run, subrun, event).
+
 
 ### Combining outputs
 

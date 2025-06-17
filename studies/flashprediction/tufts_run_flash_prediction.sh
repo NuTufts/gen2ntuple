@@ -4,10 +4,11 @@ JOBSTARTDATE=$(date)
 
 RECO_FILELIST=$1
 DLMERGED_FILELIST=$2
-NFILES=$3
-MCFLAG=$4
+SAMPLENAME=$3
+NFILES=$4
+MCFLAG=$5
 ubdlDir=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/ubdl/
-outDir=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/flashprediction/output/
+outDir=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/flashprediction/output/${SAMPLENAME}/
 FLASH_PREDICTION_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/flashprediction/
 
 localDir=`printf /tmp/calc_flash_prediction_jobarrayid%05d ${SLURM_ARRAY_TASK_ID}`

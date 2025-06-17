@@ -1,4 +1,3 @@
-
 import os,sys,argparse,time
 
 """
@@ -310,6 +309,7 @@ piKEestimator = pionRange2T()
 clusterFuncs = larflow.recoutils.ClusterFunctions()
 photonTruthMetrics = larflow.reco.ShowerTruthMetricsMaker()
 
+print("LOADING RESNET MODEL")
 model = ResNet34(2, ResBlock, outputs=5)
 if "cuda" in args.device and args.multiGPU:
   model = nn.DataParallel(model)
@@ -731,7 +731,8 @@ for filepair in files:
   for ientry in range(ioll.get_entries()):
 
     print("====================================================",flush=True)
-    print("reached entry:", ientry,flush=True)
+    print("ENTRY[", ientry,"]",flush=True)
+    print("====================================================",flush=True)
     sys.stdout.flush()
     
     # clear mcpixelpgraph state

@@ -4,7 +4,8 @@ JOBSTARTDATE=$(date)
 
 scriptDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple"
 #pythonScript="${scriptDir}/$1 -nkp --dlana_input --ignoreWeights "
-pythonScript="${scriptDir}/$1 -nkp --ignoreWeights "
+#pythonScript="${scriptDir}/$1 -nkp --ignoreWeights "
+pythonScript="${scriptDir}/$1 -nkp "
 weightDir="/cluster/tufts/wongjiradlabnu/mrosen25/gen2ntuple/event_weighting/"
 
 kpsRecoFiles=$2
@@ -12,7 +13,7 @@ mdlRecoFiles=$3
 
 weightFile="${weightDir}/$4"
 
-checkpointDir="/cluster/tufts/wongjiradlabnu/mrosen25/prongCNN/models/checkpoints"
+checkpointDir="/cluster/tufts/wongjiradlabnu/twongj01/gen2/prongCNN/models/checkpoints/"
 modelPath="${checkpointDir}/$5"
 
 
@@ -59,7 +60,7 @@ echo "files: ${files}"
 scriptName=`echo $1 | sed s/.py//g`
 logFile="${logDir}/${scriptName}_${outTag}_${SLURM_ARRAY_TASK_ID}.log"
 
-local_jobdir=`printf /tmp/run_selection_jobid%d_%04d ${SLURM_JOB_ID} ${SLURM_ARRAY_TASK_ID}`
+local_jobdir=`printf /tmp/gen2ntuple_${sampleName}_jobid%d_%04d ${SLURM_JOB_ID} ${SLURM_ARRAY_TASK_ID}`
 #rm -rf $local_jobdir
 mkdir -p $local_jobdir
 cd $local_jobdir  
@@ -69,7 +70,7 @@ outputs=""
 
 for file in $files; do
   
-  outFile="${scriptName}_${outTag}_output_${SLURM_ARRAY_TASK_ID}_${iF}.root"
+  outFile=`printf ${scriptName}_${outTag}_output_%04d_%03d.root ${SLURM_ARRAY_TASK_ID} ${iF}`
   echo "inputfile path: $file" >> ${logFile}
   echo "outFile: $outFile" >> ${logFile}
 
@@ -85,6 +86,11 @@ for file in $files; do
   fi
 
   ((iF = iF + 1))
+
+  suboutDir=`printf ${outDir}/arrayid_%04d ${SLURM_ARRAY_TASK_ID}`
+  mkdir -p $suboutDir
+  cp $outFile $suboutDir/
+  
   outputs="$outputs $outFile"
 
 done
@@ -93,7 +99,10 @@ mergedOutput="ntuple_${sampleName}_${outTag}_output_${SLURM_ARRAY_TASK_ID}.root"
 echo "output files: $outputs" >> ${logFile}
 echo "merging into: $mergedOutput" >> ${logFile}
 hadd -f $mergedOutput $outputs
-cp $mergedOutput $outDir
+cp $mergedOutput $outDir/
+
+# for debug
+#cp *.root $outDir/
 
 # clean-up
 rm $outputs
