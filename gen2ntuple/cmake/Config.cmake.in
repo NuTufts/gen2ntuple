@@ -1,0 +1,25 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find ROOT
+find_dependency(ROOT CONFIG REQUIRED)
+
+# Find UBDL packages
+find_dependency(larlite)
+find_dependency(larcv)
+find_dependency(ublarcvapp)
+find_dependency(larflow)
+
+# Check if components exist
+set(gen2ntuple_FOUND TRUE)
+
+# Import targets
+include("${CMAKE_CURRENT_LIST_DIR}/@TARGETS_EXPORT_NAME@.cmake")
+
+# Set variables
+set(GEN2NTUPLE_INCLUDE_DIRS "@PACKAGE_GEN2NTUPLE_INCLUDE_DIR@")
+set(GEN2NTUPLE_LIBRARY_DIRS "@PACKAGE_GEN2NTUPLE_LIBRARY_DIR@")
+set(GEN2NTUPLE_LIBRARIES gen2ntuple)
+
+check_required_components(gen2ntuple)

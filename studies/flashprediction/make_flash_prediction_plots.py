@@ -4,7 +4,8 @@ import ROOT as rt
 
 rt.gStyle.SetOptStat(0)
 
-filepath="flashprediction_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.root"
+#filepath="flashprediction_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.root"
+filepath="../../../lantern_ana/flashprediction_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.root"
 
 inputfile = rt.TFile(filepath)
 tree = inputfile.Get("FlashPredictionTree")
