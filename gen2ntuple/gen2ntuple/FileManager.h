@@ -4,9 +4,12 @@
 #include <vector>
 #include <memory>
 
+#include "larflow/Reco/NuVertexCandidate.h"
+
 // Forward declarations
 class TFile;
 class TTree;
+class TChain;
 
 namespace larlite {
     class storage_manager;
@@ -43,6 +46,8 @@ public:
     // Data access
     larlite::storage_manager* getLarliteIO() { return larlite_io_.get(); }
     larcv::IOManager* getLarcvIO() { return larcv_io_.get(); }
+    TChain* getRecoIO() { return kpsreco_.get(); }
+    std::vector<larflow::reco::NuVertexCandidate>* getNuCandidates() { return _nuvtx_v; };
     
     // Event synchronization
     struct EventID {
@@ -70,7 +75,14 @@ private:
     // File managers
     std::unique_ptr<larlite::storage_manager> larlite_io_;
     std::unique_ptr<larcv::IOManager> larcv_io_;
+    std::unique_ptr<TChain> kpsreco_;
     
+    // Reco Branches
+    std::vector< larflow::reco::NuVertexCandidate >* _nuvtx_v;
+    int kpsreco_run;
+    int kpsreco_subrun;
+    int kpsreco_event;
+
     // Event tracking
     int current_entry_;
     int total_entries_;
@@ -78,6 +90,7 @@ private:
     // Helper methods
     bool setupLarliteIO();
     bool setupLarcvIO();
+    bool setupRecoIO();
     bool parseTruthFileList();
     std::vector<std::string> truth_files_;
     

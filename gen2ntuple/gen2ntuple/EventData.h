@@ -123,6 +123,15 @@ struct EventData {
     float vtxKPscore;
     float vtxMaxIntimePixelSum;
     float vtxFracHitsOnCosmic;
+
+    // Predicted Flash PE for the nu candidate
+    float observedPEtotal;
+    std::array<float, 32> observedPE;
+
+    float predictedPEtotal;
+    std::array<float, 32> predictedPE;
+    float sinkhorn_div;
+    float fracerrPE;
     
     // Pixel fractions (one per plane)
     std::array<float, 3> fracUnrecoIntimePixels;

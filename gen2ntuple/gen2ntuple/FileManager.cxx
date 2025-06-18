@@ -14,7 +14,11 @@
 namespace gen2ntuple {
 
 FileManager::FileManager() 
-    : is_mc_(false), is_dlana_(false), current_entry_(0), total_entries_(0) {
+    : is_mc_(false), 
+    is_dlana_(false), 
+    _nuvtx_v(nullptr),
+    current_entry_(0), 
+    total_entries_(0) {
 }
 
 FileManager::~FileManager() {
@@ -163,6 +167,23 @@ bool FileManager::setupLarcvIO() {
     return true;
 }
 
+bool FileManager::setupRecoIO() {
+
+    kpsreco_ = std::make_unique<TChain>("KPSRecoManagerTree");
+    
+    // Add truth files (merged_dlreco)
+    for (const auto& recofile : kpsreco_files_ ) {
+        kpsreco_->Add( recofile.c_str() );
+    }
+    
+    kpsreco_->SetBranchAddress("nuvetoed_v", &_nuvtx_v );
+    kpsreco_->SetBranchAddress("run",    &kpsreco_run);
+    kpsreco_->SetBranchAddress("subrun", &kpsreco_subrun);
+    kpsreco_->SetBranchAddress("event",  &kpsreco_event);
+
+    return true;
+}
+
 void FileManager::closeFiles() {
     if (larlite_io_) {
         larlite_io_->close();
@@ -172,6 +193,10 @@ void FileManager::closeFiles() {
     if (larcv_io_) {
         larcv_io_->finalize();
         larcv_io_.reset();
+    }
+
+    if (kpsreco_) {
+        kpsreco_.reset();
     }
 }
 
@@ -187,6 +212,8 @@ bool FileManager::nextEvent() {
     }
     
     larcv_io_->read_entry(current_entry_);
+
+    kpsreco_->GetEntry(current_entry_);
     
     current_entry_++;
     
@@ -227,7 +254,8 @@ FileManager::EventID FileManager::getCurrentEventID() const {
 }
 
 bool FileManager::synchronizeEvents() {
-    if (!larlite_io_ || !larcv_io_) {
+
+    if (!larlite_io_ || !larcv_io_ || kpsreco_ ) {
         return false;
     }
     
@@ -239,9 +267,14 @@ bool FileManager::synchronizeEvents() {
         larcv_id.run = larcv_io_->event_id().run();
         larcv_id.subrun = larcv_io_->event_id().subrun();  
         larcv_id.event = larcv_io_->event_id().event();
+
+        EventID reco_id;
+        reco_id.run    = kpsreco_run;
+        reco_id.subrun = kpsreco_subrun;
+        reco_id.event  = kpsreco_event;
         
         // Check if they match
-        bool synchronized = (larlite_id == larcv_id);
+        bool synchronized = (larlite_id == larcv_id) && ( larlite_id==reco_id );
         
         if (!synchronized) {
             std::cerr << "FileManager: Event ID mismatch!" << std::endl;
@@ -249,6 +282,8 @@ bool FileManager::synchronizeEvents() {
                       << ":" << larlite_id.event << std::endl;
             std::cerr << "  LArCV: " << larcv_id.run << ":" << larcv_id.subrun 
                       << ":" << larcv_id.event << std::endl;
+            std::cerr << "  Reco: " << reco_id.run << ":" << reco_id.subrun 
+                      << ":" << reco_id.event << std::endl;
         }
         
         return synchronized;

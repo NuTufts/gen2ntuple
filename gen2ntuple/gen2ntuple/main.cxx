@@ -143,8 +143,10 @@ int main(int argc, char** argv) {
         }
         
         // Process vertex selection
+
         if (!vertex_selector.processEvent(file_manager.getLarliteIO(), 
                                          file_manager.getLarcvIO(), 
+                                         file_manager.getNuCandidates(),
                                          &event_data)) {
             LOG_WARNING("Vertex selection failed for event " + 
                        std::to_string(event_data.event));

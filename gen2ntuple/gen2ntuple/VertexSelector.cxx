@@ -4,32 +4,74 @@
 #include <cmath>
 
 // LArLite includes
-#include "DataFormat/storage_manager.h"
-#include "DataFormat/vertex.h"
-#include "DataFormat/mctruth.h"
+#include "larlite/DataFormat/storage_manager.h"
+#include "larlite/DataFormat/vertex.h"
+#include "larlite/DataFormat/mctruth.h"
+#include "larlite/DataFormat/opflash.h"
+#include "larlite/LArUtil/SpaceChargeMicroBooNE.h"
 
 // LArCV includes
 #include "larcv/core/DataFormat/IOManager.h"
 #include "larcv/core/DataFormat/EventPixel2D.h"
+#include "larcv/core/DataFormat/EventImage2D.h"
 
 // UBLArCVApp includes (for truth matching)
 #include "ublarcvapp/MCTools/NeutrinoVertex.h"
-#include "LArUtil/SpaceChargeMicroBooNE.h"
+
+#include "larflow/Reco/NuVertexFlashPrediction.h"
+#include "larflow/Reco/SinkhornFlashDivergence.h"
 
 namespace gen2ntuple {
 
 VertexSelector::VertexSelector() 
-    : is_mc_(false), include_keypoints_(false) {
+    : is_mc_(false), include_keypoints_(false) 
+{
+    _nuvtx_flashpred_v.clear();
+
+    predictor = new larflow::reco::NuVertexFlashPrediction;
+    // Configure flash predictor with standard parameters
+    predictor->setChargeToPhotonParams(
+        200.0,    // adc_per_electron
+        23.6e-3,  // mev_per_electron (MeV)
+        24000.0,  // photons_per_mev
+        0.7       // recombination_factor
+    );
+    predictor->setTrackConversionParams(
+        3,      // dcol
+        3,      // drow
+        0.3,    // minstepsize (cm)
+        0.5     // maxstepsize (cm)
+    );
+    predictor->setShowerConversionParams(
+        3,      // dcol
+        3       // drow
+    );     
+
+    sinkhorn_calc = new larflow::reco::SinkhornFlashDivergence;
+}
+
+VertexSelector::~VertexSelector()
+{
+    // Clear flash prediction vector
+    delete predictor;
+    predictor = nullptr;
+    delete sinkhorn_calc;
+    sinkhorn_calc = nullptr;
+    _nuvtx_flashpred_v.clear();
 }
 
 bool VertexSelector::processEvent(larlite::storage_manager* larlite_io,
                                  larcv::IOManager* larcv_io,
+                                 std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v,
                                  EventData* event_data) {
     
     if (!event_data) {
         std::cerr << "VertexSelector: EventData pointer is null" << std::endl;
         return false;
     }
+
+    // Calculate Flash Prediction to each vertex
+    calculateFlashPredictions(larlite_io, larcv_io, nuvtx_v);
     
     // Find the best vertex candidate
     if (!findBestVertex(larlite_io, larcv_io, event_data)) {
@@ -214,6 +256,76 @@ bool VertexSelector::calculateTruthDistance(larlite::storage_manager* larlite_io
     }
     
     return true;
+}
+
+int VertexSelector::calculateFlashPredictions( larlite::storage_manager* larlite_io,
+                                               larcv::IOManager* larcv_io,
+                                               std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v) 
+{
+
+    _nuvtx_sinkhorn_div_v.clear();
+    _nuvtx_flashpred_v.clear();
+
+    // Get Wire Plane Images
+    auto ev_img = (larcv::EventImage2D*)(larcv_io->get_data(larcv::kProductImage2D, "wire"));
+    if (!ev_img || ev_img->Image2DArray().size() < 3) {
+        throw std::runtime_error("VertexSelector::calculateFlashPredictions - Wrong number of images");
+    }
+    auto const& adc_v = ev_img->as_vector();
+    float adc_threshold = 10.0;
+
+    // Get Observed Flash
+    auto ev_opflash = (larlite::event_opflash*)(larlite_io->get_data(larlite::data::kOpFlash, "simpleFlashBeam"));    
+    bool has_flash = (ev_opflash && ev_opflash->size() > 0);  
+    std::vector<float> obs_pe_per_pmt(32,0.0);
+    float obs_total_pe = 0.;
+    if ( has_flash ) {
+        const auto& flash = ev_opflash->at(0);
+        obs_total_pe = flash.TotalPE();
+        for (int pmt = 0; pmt < 32; pmt++) {
+            obs_pe_per_pmt[pmt] = flash.PE(pmt);
+        }       
+    }
+    else {
+        // Create flat dummy opflash
+        obs_total_pe = 0.0;
+        for (int pmt = 0; pmt < 32; pmt++) {
+            obs_pe_per_pmt[pmt] = 1.0/32.0;
+        }        
+    }
+
+    float sinkhorn_regularization = 1.0; 
+
+    for (auto& vtx : *nuvtx_v ) {
+
+        // Make Prediction Flash
+        auto predicted_flash_all = predictor->predictFlash(
+            vtx,
+            adc_v,
+            adc_threshold,
+            true,   // use_trilinear
+            false   // primary_prongs_only = false (all particles)
+        );
+
+        std::vector<float> pred_pe_per_pmt(32,0.0);
+        for (int pmt = 0; pmt < 32; pmt++) {
+            pred_pe_per_pmt[pmt] = predicted_flash_all.PE(pmt);
+        }        
+
+        _nuvtx_flashpred_v.push_back( pred_pe_per_pmt );
+
+        // Calculate Sinkhorn Divergence predicted and observed
+        float sinkhorn_div = sinkhorn_calc->calculateDivergence(
+            pred_pe_per_pmt,
+            obs_pe_per_pmt,
+            sinkhorn_regularization,
+            100,
+            1e-6
+        );
+        _nuvtx_sinkhorn_div_v.push_back( sinkhorn_div );
+    }
+
+    return 0;
 }
 
 } // namespace gen2ntuple
