@@ -170,14 +170,12 @@ void BranchManager::setupVertexBranches(EventData* data) {
     // Vertex reconstruction
     event_tree_->Branch("foundVertex", &data->foundVertex, "foundVertex/O");
     event_tree_->Branch("vtxIndex", &data->vtxIndex, "vtxIndex/I");
-    event_tree_->Branch("vtxScore", &data->vtxScore, "vtxScore/F");
-    event_tree_->Branch("vtxKPtype", &data->vtxKPtype, "vtxKPtype/I");
-    event_tree_->Branch("vtxKPscore", &data->vtxKPscore, "vtxKPscore/F");
     
     // Vertex position
     event_tree_->Branch("vtxX", &data->vtxX, "vtxX/F");
     event_tree_->Branch("vtxY", &data->vtxY, "vtxY/F");
     event_tree_->Branch("vtxZ", &data->vtxZ, "vtxZ/F");
+    event_tree_->Branch("vtxScore", &data->vtxScore, "vtxScore/F");
     
     // Vertex quality
     event_tree_->Branch("vtxIsFiducial", &data->vtxIsFiducial, "vtxIsFiducial/O");
@@ -186,10 +184,21 @@ void BranchManager::setupVertexBranches(EventData* data) {
     if (is_mc_) {
         event_tree_->Branch("vtxDistToTrue", &data->vtxDistToTrue, "vtxDistToTrue/F");
     }
-    
+
     // Vertex metrics
+    event_tree_->Branch("vtxKPtype", &data->vtxKPtype, "vtxKPtype/I");
+    event_tree_->Branch("vtxKPscore", &data->vtxKPscore, "vtxKPscore/F");
     event_tree_->Branch("vtxMaxIntimePixelSum", &data->vtxMaxIntimePixelSum, "vtxMaxIntimePixelSum/F");
     event_tree_->Branch("vtxFracHitsOnCosmic", &data->vtxFracHitsOnCosmic, "vtxFracHitsOnCosmic/F");
+
+    // Flash Predictions
+    event_tree_->Branch("observedPEtotal", &data->observedPEtotal, "observedPEtotal/F");
+    event_tree_->Branch("observedPE", data->observedPE.data(), "observedPE[32]/F");
+    event_tree_->Branch("predictedPEtotal", &data->predictedPEtotal, "predictedPEtotal/F");
+    event_tree_->Branch("predictedPE", data->predictedPE.data(), "predictedPE[32]/F" );
+    event_tree_->Branch("sinkhorn_div", &data->sinkhorn_div, "sinkhorn_div/F");
+    event_tree_->Branch("fracerrPE", &data->fracerrPE, "fracerrPE/F");
+
     
     // Pixel fractions (fixed size arrays)
     event_tree_->Branch("fracUnrecoIntimePixels", data->fracUnrecoIntimePixels.data(), "fracUnrecoIntimePixels[3]/F");

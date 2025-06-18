@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
     LOG_INFO("  Is MC: " + std::string(config.isMC() ? "yes" : "no"));
     LOG_INFO("  Include keypoints: " + std::string(config.isKeypointsDisabled() ? "no" : "yes"));
     LOG_INFO("  Device: " + config.getDevice());
+    LOG_INFO("  Vertex Selection Method: " + config.getVertexSelection() );
     
     // Create output file
     std::unique_ptr<TFile> output_file(TFile::Open(config.getOutputFile().c_str(), "RECREATE"));
@@ -54,12 +55,20 @@ int main(int argc, char** argv) {
     
     // Create data structures
     EventData event_data;
+    RecoData reco_data;
     POTData pot_data;
     
     // Create branch manager
     BranchManager branch_manager(output_file.get(), config.isMC(), !config.isKeypointsDisabled());
-    branch_manager.setupEventBranches(&event_data);
-    
+
+    try {
+        branch_manager.setupEventBranches(&event_data);
+    }
+    catch ( std::exception& e ) {
+        std::cerr << "Error setting up branches for EventData" << std::endl;
+        std::cerr << e.what() << std::endl;
+    }
+
     if (config.isMC()) {
         branch_manager.setupPOTBranches(&pot_data);
     }
@@ -82,7 +91,17 @@ int main(int argc, char** argv) {
         LOG_ERROR("Failed to open input files");
         return 1;
     }
-    
+
+    std::cout << "Setup Branches for RecoData" << std::endl;
+    try {
+        reco_data.setBranchAddresses( file_manager.getRecoIO() );
+    }
+    catch ( std::exception& e ) {
+        std::cerr << "Error setting up branches for RecoData" << std::endl;
+        std::cerr << e.what() << std::endl;
+    }
+
+
     // Create processors
     std::unique_ptr<MCTruthProcessor> mc_processor;
     if (config.isMC()) {
@@ -146,8 +165,9 @@ int main(int argc, char** argv) {
 
         if (!vertex_selector.processEvent(file_manager.getLarliteIO(), 
                                          file_manager.getLarcvIO(), 
-                                         file_manager.getNuCandidates(),
-                                         &event_data)) {
+                                         &event_data, 
+                                         &reco_data,
+                                         config.getVertexSelection() )) {
             LOG_WARNING("Vertex selection failed for event " + 
                        std::to_string(event_data.event));
             continue;

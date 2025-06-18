@@ -264,6 +264,11 @@ bool Configuration::validate() const {
         std::cerr << "Error: device must be 'cpu' or 'cuda'" << std::endl;
         valid = false;
     }
+
+    if ( vertex_selection_=="" ) {
+        std::cerr << "Error: empty vertex selection method. Must choose." << std::endl;
+        valid = false;
+    }
     
     return valid;
 }

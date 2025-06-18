@@ -112,10 +112,15 @@ bool FileManager::openFiles() {
     if (!setupLarcvIO()) {
         return false;
     }
+
+    if (!setupRecoIO()) {
+        return false;
+    }
     
     // Get total entries (minimum of both managers)
     int larlite_entries = larlite_io_->get_entries();
-    int larcv_entries = larcv_io_->get_n_entries();
+    int larcv_entries   = larcv_io_->get_n_entries();
+    int reco_entries    = kpsreco_->GetEntries();
     
     total_entries_ = std::min(larlite_entries, larcv_entries);
     current_entry_ = 0;
@@ -123,6 +128,7 @@ bool FileManager::openFiles() {
     std::cout << "FileManager: Opened files successfully" << std::endl;
     std::cout << "  LArLite entries: " << larlite_entries << std::endl;
     std::cout << "  LArCV entries: " << larcv_entries << std::endl;
+    std::cout << "  Reco entries: " << reco_entries << std::endl;
     std::cout << "  Processing entries: " << total_entries_ << std::endl;
     
     return true;
