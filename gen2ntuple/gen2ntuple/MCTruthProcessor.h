@@ -20,6 +20,12 @@ namespace larutil {
 namespace larcv {
     class IOManager;
 }
+namespace ublarcvapp {
+namespace mctools {
+    class MCPixelPGraph;
+}
+}
+
 
 namespace gen2ntuple {
 
@@ -58,6 +64,9 @@ private:
 
     // SpaceCharge Utility
     larutil::SpaceChargeMicroBooNE* pSCE;
+
+    // Particle Graph Utility
+    ublarcvapp::mctools::MCPixelPGraph* pmcpg;
     
     // Python C-API handling
     bool initializePython();

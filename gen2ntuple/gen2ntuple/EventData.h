@@ -48,13 +48,16 @@ struct EventData {
     static constexpr int MAX_TRUE_PRIMARY_PARTS = 50;
     int nTruePrimParts;
     std::array<int, MAX_TRUE_PRIMARY_PARTS>   truePrimPartPDG;
+
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartE;
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartPx;
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartPy;
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartPz;
+
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartX;
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartY;
     std::array<float, MAX_TRUE_PRIMARY_PARTS> truePrimPartZ;
+
     std::array<int,   MAX_TRUE_PRIMARY_PARTS> truePrimPartContained;
     
     // True simulated particles (from Geant4): MCTruthProcessor::extractSimulatedParticles
@@ -88,6 +91,10 @@ struct EventData {
     std::array<float, MAX_TRUE_SIM_PARTS> trueSimPartEndZ;
 
     std::array<int, MAX_TRUE_SIM_PARTS>   trueSimPartContained;
+
+    std::array<float, MAX_TRUE_SIM_PARTS> trueSimPartPixelSumUplane;
+    std::array<float, MAX_TRUE_SIM_PARTS> trueSimPartPixelSumVplane;
+    std::array<float, MAX_TRUE_SIM_PARTS> trueSimPartPixelSumYplane;
     
     // ===============================
     // Vertex Reconstruction

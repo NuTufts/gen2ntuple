@@ -40,13 +40,16 @@ void EventData::clear() {
     // True primary particles
     nTruePrimParts = 0;
     truePrimPartPDG.fill(0);
+
     truePrimPartE.fill(-999.0);
     truePrimPartPx.fill(-999.0);
     truePrimPartPy.fill(-999.0);
     truePrimPartPz.fill(-999.0);
+
     truePrimPartX.fill(-999.0);
     truePrimPartY.fill(-999.0);
     truePrimPartZ.fill(-999.0);
+
     truePrimPartContained.fill(-1);
     
     // True simulated particles
@@ -55,7 +58,7 @@ void EventData::clear() {
     trueSimPartTID.fill(-1);
     trueSimPartMID.fill(-1);
     trueSimPartProcess.fill(-1);
-    
+
     trueSimPartE.fill(-999.0);
     trueSimPartPx.fill(-999.0);
     trueSimPartPy.fill(-999.0);
@@ -64,6 +67,10 @@ void EventData::clear() {
     trueSimPartX.fill(-999.0);
     trueSimPartY.fill(-999.0);
     trueSimPartZ.fill(-999.0);
+
+    trueSimPartEDepX.fill(-999.0);
+    trueSimPartEDepY.fill(-999.0);
+    trueSimPartEDepZ.fill(-999.0);
 
     trueSimPartEndE.fill(-999.0);
     trueSimPartEndPx.fill(-999.0);
@@ -75,6 +82,10 @@ void EventData::clear() {
     trueSimPartEndZ.fill(-999.0);
 
     trueSimPartContained.fill(-1);
+
+    trueSimPartPixelSumUplane.fill(0);
+    trueSimPartPixelSumVplane.fill(0);
+    trueSimPartPixelSumYplane.fill(0);
 
     
     // Vertex Reconstruction

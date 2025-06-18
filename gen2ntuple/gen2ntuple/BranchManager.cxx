@@ -157,6 +157,13 @@ void BranchManager::setupMCTruthBranches(EventData* data) {
     createArrayBranch(event_tree_, "trueSimPartContained", data->trueSimPartContained.data(), 
                      "nTrueSimParts", EventData::MAX_TRUE_SIM_PARTS, "I");
 
+    createArrayBranch(event_tree_, "trueSimPartPixelSumUplane", data->trueSimPartPixelSumUplane.data(), 
+                     "nTrueSimParts", EventData::MAX_TRUE_SIM_PARTS, "F");
+    createArrayBranch(event_tree_, "trueSimPartPixelSumVplane", data->trueSimPartPixelSumVplane.data(), 
+                     "nTrueSimParts", EventData::MAX_TRUE_SIM_PARTS, "F");
+    createArrayBranch(event_tree_, "trueSimPartPixelSumYplane", data->trueSimPartPixelSumYplane.data(), 
+                     "nTrueSimParts", EventData::MAX_TRUE_SIM_PARTS, "F");
+
 }
 
 void BranchManager::setupVertexBranches(EventData* data) {

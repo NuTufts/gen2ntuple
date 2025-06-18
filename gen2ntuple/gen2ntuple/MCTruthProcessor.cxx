@@ -17,22 +17,29 @@
 #include "larcv/core/DataFormat/IOManager.h"
 
 #include "ublarcvapp/MCTools/NeutrinoVertex.h"
+#include "ublarcvapp/MCTools/MCPixelPGraph.h"
+
+#include "larflow/Reco/ShowerTruthMetricsMaker.h"
 
 #include "WCFiducial.h"
 
 namespace gen2ntuple {
 
 MCTruthProcessor::MCTruthProcessor()
-: pSCE(nullptr) 
+: pSCE(nullptr),
+  pmcpg(nullptr)
 {
     initializePython();
     pSCE = new larutil::SpaceChargeMicroBooNE;
+    pmcpg = new ublarcvapp::mctools::MCPixelPGraph;
 }
 
 MCTruthProcessor::~MCTruthProcessor() {
     finalizePython();
     delete pSCE;
     pSCE = nullptr;
+    delete pmcpg;
+    pmcpg = nullptr;
 }
 
 bool MCTruthProcessor::processEvent(larlite::storage_manager* larlite_io, 
@@ -43,6 +50,9 @@ bool MCTruthProcessor::processEvent(larlite::storage_manager* larlite_io,
         std::cerr << "MCTruthProcessor: EventData pointer is null" << std::endl;
         return false;
     }
+
+    pmcpg->clear();
+    pmcpg->buildgraph( *larcv_io, *larlite_io );
     
     // Set cross-section weight
     event_data->xsecWeight = getEventWeight(event_data->run, event_data->subrun, event_data->event);
@@ -269,6 +279,18 @@ bool MCTruthProcessor::extractSimulatedParticles(larlite::storage_manager* larli
               = WCFiducial::getME()->insideFV( endsce.X(), endsce.Y(), endsce.Z() );
 
             event_data->trueSimPartContained[n_sim] = (isContained) ? 1 : 0;
+
+            auto pnode = pmcpg->findTrackID( mcpart.TrackID() );
+            if ( pnode!=nullptr ) {
+                event_data->trueSimPartPixelSumUplane[n_sim] = pnode->pixsum_v[0];
+                event_data->trueSimPartPixelSumVplane[n_sim] = pnode->pixsum_v[1];
+                event_data->trueSimPartPixelSumYplane[n_sim] = pnode->pixsum_v[2];
+            }
+            else {
+                event_data->trueSimPartPixelSumUplane[n_sim] = 0.;
+                event_data->trueSimPartPixelSumVplane[n_sim] = 0.;
+                event_data->trueSimPartPixelSumYplane[n_sim] = 0.;
+            }
             
             n_sim++;
         }
@@ -303,29 +325,96 @@ bool MCTruthProcessor::extractSimulatedParticles(larlite::storage_manager* larli
             event_data->trueSimPartX[n_sim] = startsce.X();
             event_data->trueSimPartY[n_sim] = startsce.Y();
             event_data->trueSimPartZ[n_sim] = startsce.Z();
-            event_data->trueSimPartEDepX[n_sim] = startsce.X();
-            event_data->trueSimPartEDepY[n_sim] = startsce.Y();
-            event_data->trueSimPartEDepZ[n_sim] = startsce.Z();
+
+            if ( mcpart.PdgCode()!=22 ) {
+                event_data->trueSimPartEDepX[n_sim] = startsce.X();
+                event_data->trueSimPartEDepY[n_sim] = startsce.Y();
+                event_data->trueSimPartEDepZ[n_sim] = startsce.Z();
+
+                // End position (trajectory endpoint) 
+                event_data->trueSimPartEndX[n_sim] = endsce.X();
+                event_data->trueSimPartEndY[n_sim] = endsce.Y();
+                event_data->trueSimPartEndZ[n_sim] = endsce.Z();
+
+                // End position containment test
+                bool isContained 
+                  = WCFiducial::getME()->insideFV( endsce.X(), endsce.Y(), endsce.Z() );
+                event_data->trueSimPartContained[n_sim] = (isContained) ? 1 : 0;
+
+                auto pnode = pmcpg->findTrackID( mcpart.TrackID() );
+                if ( pnode!=nullptr ) {
+                    event_data->trueSimPartPixelSumUplane[n_sim] = pnode->pixsum_v[0];
+                    event_data->trueSimPartPixelSumVplane[n_sim] = pnode->pixsum_v[1];
+                    event_data->trueSimPartPixelSumYplane[n_sim] = pnode->pixsum_v[2];  
+                }
+                else {
+                    event_data->trueSimPartPixelSumUplane[n_sim] = 0.;
+                    event_data->trueSimPartPixelSumVplane[n_sim] = 0.;
+                    event_data->trueSimPartPixelSumYplane[n_sim] = 0.;
+                }             
+
+            }
+            else {
+                larflow::reco::ShowerTruthMetricsMaker photonTruthMetrics;
+                try {
+                    auto photon_edep_v = pmcpg->getParticleEDepPos( mcpart.TrackID() );
+                    event_data->trueSimPartEDepX[n_sim] = photon_edep_v[0];
+                    event_data->trueSimPartEDepY[n_sim] = photon_edep_v[1];
+                    event_data->trueSimPartEDepZ[n_sim] = photon_edep_v[2];
+
+                    auto photon_trunk_endpts_v 
+                        = photonTruthMetrics.getPhotonTrunkLineSegment( *pmcpg, mcpart.TrackID() );
+                    if ( photon_trunk_endpts_v.size()==6 ) {
+                        event_data->trueSimPartEndX[n_sim] = photon_edep_v[0] + ( photon_trunk_endpts_v[3]-photon_trunk_endpts_v[0]);
+                        event_data->trueSimPartEndY[n_sim] = photon_edep_v[1] + ( photon_trunk_endpts_v[4]-photon_trunk_endpts_v[1]);
+                        event_data->trueSimPartEndZ[n_sim] = photon_edep_v[2] + ( photon_trunk_endpts_v[5]-photon_trunk_endpts_v[2]);
+                        bool isContained 
+                            = WCFiducial::getME()->insideFV( event_data->trueSimPartEndX[n_sim],
+                                                             event_data->trueSimPartEndY[n_sim],
+                                                             event_data->trueSimPartEndZ[n_sim]);
+                        event_data->trueSimPartContained[n_sim] = (isContained) ? 1 : 0;
+                    }
+                    else {
+                        event_data->trueSimPartEndX[n_sim] = 0.;
+                        event_data->trueSimPartEndY[n_sim] = 0.;
+                        event_data->trueSimPartEndZ[n_sim] = 0.;
+                        event_data->trueSimPartContained[n_sim] = -1;
+                    }
+
+                    auto photon_trunk_pixsum_v 
+                        = pmcpg->getTruePhotonTrunkPlanePixelSums( mcpart.TrackID() );
+
+                    if ( photon_trunk_pixsum_v.size()==3 ) {
+                      event_data->trueSimPartPixelSumUplane[n_sim] = photon_trunk_pixsum_v[0];
+                      event_data->trueSimPartPixelSumVplane[n_sim] = photon_trunk_pixsum_v[1];
+                      event_data->trueSimPartPixelSumYplane[n_sim] = photon_trunk_pixsum_v[2];
+                    }
+                    else {
+                      event_data->trueSimPartPixelSumUplane[n_sim] = 0.0;
+                      event_data->trueSimPartPixelSumVplane[n_sim] = 0.0;
+                      event_data->trueSimPartPixelSumYplane[n_sim] = 0.0;
+                    }            
+                }
+                catch (std::exception& e) {
+                    std::stringstream errmsg;
+                    errmsg << "Error getting detectable photon EDep position" << std::endl;
+                    errmsg << e.what() << std::endl;
+                    throw std::runtime_error( e.what() );
+                }
+            }// end of if photon
             
             event_data->trueSimPartE[n_sim]   = mcpart.Start().E();  // * 1000.0f; // Convert to MeV
             event_data->trueSimPartPx[n_sim]  = mcpart.Start().Px(); // * 1000.0f;
             event_data->trueSimPartPy[n_sim]  = mcpart.Start().Py(); // * 1000.0f;
             event_data->trueSimPartPz[n_sim]  = mcpart.Start().Pz(); // * 1000.0f;
             
-            // End position (trajectory endpoint) 
-            event_data->trueSimPartEndX[n_sim] = endsce.X();
-            event_data->trueSimPartEndY[n_sim] = endsce.Y();
-            event_data->trueSimPartEndZ[n_sim] = endsce.Z();
+
             event_data->trueSimPartEndE[n_sim]   = mcpart.End().E();  // * 1000.0f; // Convert to MeV
             event_data->trueSimPartEndPx[n_sim]  = mcpart.End().Px(); // * 1000.0f;
             event_data->trueSimPartEndPy[n_sim]  = mcpart.End().Py(); // * 1000.0f;
             event_data->trueSimPartEndPz[n_sim]  = mcpart.End().Pz(); // * 1000.0f;
 
-            // End position containment test
-            bool isContained 
-              = WCFiducial::getME()->insideFV( endsce.X(), endsce.Y(), endsce.Z() );
 
-            event_data->trueSimPartContained[n_sim] = (isContained) ? 1 : 0;
             
             n_sim++;
         }
