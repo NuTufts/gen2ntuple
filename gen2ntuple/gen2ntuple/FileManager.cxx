@@ -175,11 +175,6 @@ bool FileManager::setupRecoIO() {
     for (const auto& recofile : kpsreco_files_ ) {
         kpsreco_->Add( recofile.c_str() );
     }
-    
-    kpsreco_->SetBranchAddress("nuvetoed_v", &_nuvtx_v );
-    kpsreco_->SetBranchAddress("run",    &kpsreco_run);
-    kpsreco_->SetBranchAddress("subrun", &kpsreco_subrun);
-    kpsreco_->SetBranchAddress("event",  &kpsreco_event);
 
     return true;
 }

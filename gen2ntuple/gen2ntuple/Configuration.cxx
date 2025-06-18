@@ -16,6 +16,7 @@ void Configuration::setDefaults() {
     output_file_ = "dlgen2_flat_ntuple.root";
     weight_file_ = "none";
     model_path_ = "";
+    vertex_selection_ = "";
     
     is_mc_ = false;
     is_dlana_ = false;
@@ -43,6 +44,7 @@ bool Configuration::parseCommandLine(int argc, char** argv) {
         {"max-events", required_argument, 0, 'n'},
         {"start",      required_argument, 0, 's'},
         {"threads",    required_argument, 0, 'j'},
+        {"vertex-selection", required_argument, 0, 'x'},
         {"mc",         no_argument,       0, 1001},
         {"dlana",      no_argument,       0, 1002},
         {"no-kp",      no_argument,       0, 1003},
@@ -55,7 +57,7 @@ bool Configuration::parseCommandLine(int argc, char** argv) {
     int option_index = 0;
     int c;
     
-    while ((c = getopt_long(argc, argv, "f:t:o:w:m:d:n:s:j:vh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "f:t:o:w:m:d:n:s:j:x:vh", long_options, &option_index)) != -1) {
         switch (c) {
             case 'f':
                 // Parse space-separated list of files
@@ -100,6 +102,9 @@ bool Configuration::parseCommandLine(int argc, char** argv) {
             case 'j':
                 num_threads_ = std::atoi(optarg);
                 break;
+
+            case 'x':
+                vertex_selection_ = std::string(optarg);
                 
             case 1001:  // --mc
                 is_mc_ = true;

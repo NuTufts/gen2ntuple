@@ -21,6 +21,12 @@
 #include "larflow/Reco/NuVertexFlashPrediction.h"
 #include "larflow/Reco/SinkhornFlashDivergence.h"
 
+// Include concrete vertex selection classes
+#include "SelectNuVertex.h"
+#include "HighestKPRankWithVisEnergy.h"
+#include "GetNuCandidateIntimeCharge.h"
+#include "FlashPEVertexSelection.h"
+
 namespace gen2ntuple {
 
 VertexSelector::VertexSelector() 
@@ -48,6 +54,9 @@ VertexSelector::VertexSelector()
     );     
 
     sinkhorn_calc = new larflow::reco::SinkhornFlashDivergence;
+    
+    // Load all vertex selection methods
+    loadVertexSelectionMethods();
 }
 
 VertexSelector::~VertexSelector()
@@ -62,19 +71,25 @@ VertexSelector::~VertexSelector()
 
 bool VertexSelector::processEvent(larlite::storage_manager* larlite_io,
                                  larcv::IOManager* larcv_io,
-                                 std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v,
-                                 EventData* event_data) {
+                                 EventData* event_data,
+                                 RecoData* reco_data,
+                                 std::string vertex_selector ) {
     
     if (!event_data) {
         std::cerr << "VertexSelector: EventData pointer is null" << std::endl;
         return false;
     }
+    
+    if (!reco_data || !reco_data->nuvtx_v) {
+        std::cerr << "VertexSelector: RecoData or vertex candidates not available" << std::endl;
+        return false;
+    }
 
     // Calculate Flash Prediction to each vertex
-    calculateFlashPredictions(larlite_io, larcv_io, nuvtx_v);
+    calculateFlashPredictions(larlite_io, larcv_io, event_data, reco_data);
     
     // Find the best vertex candidate
-    if (!findBestVertex(larlite_io, larcv_io, event_data)) {
+    if (!findBestVertex(larlite_io, larcv_io, event_data, reco_data, vertex_selector )) {
         // No vertex found - set defaults
         event_data->foundVertex = false;
         event_data->vtxScore = -1.0f;
@@ -118,25 +133,66 @@ bool VertexSelector::processEvent(larlite::storage_manager* larlite_io,
 
 bool VertexSelector::findBestVertex(larlite::storage_manager* larlite_io,
                                    larcv::IOManager* larcv_io,
-                                   EventData* event_data) {
+                                   EventData* event_data,
+                                   RecoData* reco_data,
+                                   std::string vertex_selector ) {
     
-    // Get vertex collection from LArLite
-    auto ev_vertex = larlite_io->get_data<larlite::event_vertex>("nuvertex");
-    if (!ev_vertex || ev_vertex->size() == 0) {
+    // Check if we have vertex candidates
+    if (!reco_data || !reco_data->nuvtx_v || reco_data->nuvtx_v->empty()) {
+        std::cout << "VertexSelector: No vertex candidates available" << std::endl;
+        event_data->foundVertex = false;
         return false;
     }
     
-    // For now, select the first vertex (in practice, this would be more sophisticated)
-    // The Python code uses various selection criteria based on scores, cosmic rejection, etc.
-    const auto& vertex = ev_vertex->at(0);
+    // Find the requested selection method
+    auto method_iter = _vertex_selection_methods_m.find(vertex_selector);
+    if (method_iter == _vertex_selection_methods_m.end()) {
+        std::cerr << "VertexSelector: Unknown vertex selection method: " << vertex_selector << std::endl;
+        std::cerr << "Available methods: ";
+        for (const auto& pair : _vertex_selection_methods_m) {
+            std::cerr << pair.first << " ";
+        }
+        std::cerr << std::endl;
+        return false;
+    }
     
+    // Pass flash predictions to the selection method if it supports it
+    method_iter->second->setFlashPredictions(_nuvtx_flashpred_v, _nuvtx_sinkhorn_div_v);
+    
+    // Use the selected method to find the best vertex
+    int selected_index = method_iter->second->selectVertex(larcv_io, larlite_io, event_data, reco_data);
+    
+    if (selected_index < 0 || selected_index >= static_cast<int>(reco_data->nuvtx_v->size())) {
+        std::cout << "VertexSelector: No vertex selected by method " << vertex_selector << std::endl;
+        event_data->foundVertex = false;
+        return false;
+    }
+    
+    // Get the selected vertex
+    const auto& selected_vtx = reco_data->nuvtx_v->at(selected_index);
+    
+    // Fill event data with selected vertex information
     event_data->foundVertex = true;
-    event_data->vtxX = vertex.X();
-    event_data->vtxY = vertex.Y(); 
-    event_data->vtxZ = vertex.Z();
+    event_data->vtxIndex = selected_index;
+    event_data->vtxX = selected_vtx.pos[0];
+    event_data->vtxY = selected_vtx.pos[1]; 
+    event_data->vtxZ = selected_vtx.pos[2];
+    event_data->vtxScore = selected_vtx.netScore;
+
+    if ( selected_index>=0 && selected_index<(int)_nuvtx_sinkhorn_div_v.size() ) {
+        /// fill flash prediction variables
+        event_data->predictedPEtotal = 0.;
+        for (int ipmt=0; ipmt<32; ipmt++) {
+            event_data->predictedPE[ipmt] = _nuvtx_flashpred_v[selected_index][ipmt];
+            event_data->predictedPEtotal += _nuvtx_flashpred_v[selected_index][ipmt];
+        }
+        event_data->sinkhorn_div = _nuvtx_sinkhorn_div_v.at(selected_index);
+        event_data->fracerrPE = (event_data->predictedPEtotal-event_data->observedPEtotal)/(0.1+event_data->observedPEtotal);
+    }
     
-    // Get vertex score if available (would need to be stored in vertex object)
-    event_data->vtxScore = 1.0f; // Placeholder
+    std::cout << "VertexSelector: Selected vertex " << selected_index 
+              << " at (" << event_data->vtxX << ", " << event_data->vtxY 
+              << ", " << event_data->vtxZ << ") with score " << event_data->vtxScore << std::endl;
     
     return true;
 }
@@ -260,11 +316,15 @@ bool VertexSelector::calculateTruthDistance(larlite::storage_manager* larlite_io
 
 int VertexSelector::calculateFlashPredictions( larlite::storage_manager* larlite_io,
                                                larcv::IOManager* larcv_io,
-                                               std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v) 
+                                               EventData* event_data,
+                                               RecoData* reco_data )
+
 {
 
     _nuvtx_sinkhorn_div_v.clear();
     _nuvtx_flashpred_v.clear();
+
+    std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v = reco_data->nuvtx_v;
 
     // Get Wire Plane Images
     auto ev_img = (larcv::EventImage2D*)(larcv_io->get_data(larcv::kProductImage2D, "wire"));
@@ -284,6 +344,7 @@ int VertexSelector::calculateFlashPredictions( larlite::storage_manager* larlite
         obs_total_pe = flash.TotalPE();
         for (int pmt = 0; pmt < 32; pmt++) {
             obs_pe_per_pmt[pmt] = flash.PE(pmt);
+            event_data->observedPE[pmt] = flash.PE(pmt);
         }       
     }
     else {
@@ -291,8 +352,15 @@ int VertexSelector::calculateFlashPredictions( larlite::storage_manager* larlite
         obs_total_pe = 0.0;
         for (int pmt = 0; pmt < 32; pmt++) {
             obs_pe_per_pmt[pmt] = 1.0/32.0;
+            event_data->observedPE[pmt] = 1.0/32.0;
+            obs_total_pe += 1.0/32.0;
         }        
     }
+    
+    // store into EventData
+    event_data->observedPEtotal = obs_total_pe;
+
+    // calculate prediction vs. observe metrics
 
     float sinkhorn_regularization = 1.0; 
 
@@ -326,6 +394,29 @@ int VertexSelector::calculateFlashPredictions( larlite::storage_manager* larlite
     }
 
     return 0;
+}
+
+bool VertexSelector::loadVertexSelectionMethods() {
+    // Clear any existing methods
+    _vertex_selection_methods_m.clear();
+    
+    // Register all available vertex selection methods
+    _vertex_selection_methods_m["select_nu_vertex"] = 
+        std::make_unique<SelectNuVertex>();
+        
+    _vertex_selection_methods_m["highest_kprank_with_visenergy"] = 
+        std::make_unique<HighestKPRankWithVisEnergy>();
+        
+    _vertex_selection_methods_m["highest_intime_reco_frac"] = 
+        std::make_unique<GetNuCandidateIntimeCharge>();
+        
+    _vertex_selection_methods_m["flash_pe_selection"] = 
+        std::make_unique<FlashPEVertexSelection>();
+    
+    std::cout << "VertexSelector: Loaded " << _vertex_selection_methods_m.size() 
+              << " vertex selection methods" << std::endl;
+    
+    return true;
 }
 
 } // namespace gen2ntuple

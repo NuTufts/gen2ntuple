@@ -1,10 +1,11 @@
 #pragma once
 
 #include "EventData.h"
+#include "RecoData.h"
 #include <vector>
 #include <memory>
 
-#include "larflow/Reco/NuVertexCandidate.h"
+
 
 // Forward declarations
 namespace larlite {
@@ -22,6 +23,9 @@ namespace reco {
 }
 }
 
+#include "VertexSelectionBase.h"
+
+
 namespace gen2ntuple {
 
 class VertexSelector {
@@ -34,19 +38,25 @@ public:
     void setKeypointMode(bool include_keypoints) { include_keypoints_ = include_keypoints; }
     
     // Main processing method
-    bool processEvent(larlite::storage_manager* larlite_io,
-                     larcv::IOManager* larcv_io,
-                     std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v,
-                     EventData* event_data);
+    bool processEvent( larlite::storage_manager* larlite_io,
+                       larcv::IOManager* larcv_io,
+                       EventData* event_data,
+                       RecoData* reco_data,
+                       std::string vertex_selector );
     
 private:
     bool is_mc_;
     bool include_keypoints_;
     
+    /** @brief Create and register possibe vertex selection methods */
+    bool loadVertexSelectionMethods();
+
     // Vertex selection methods
     bool findBestVertex(larlite::storage_manager* larlite_io,
                        larcv::IOManager* larcv_io,
-                       EventData* event_data);
+                       EventData* event_data,
+                       RecoData* reco_data,
+                       std::string vertex_selector );
     
     bool extractVertexInfo(larlite::storage_manager* larlite_io,
                           EventData* event_data);
@@ -57,9 +67,9 @@ private:
 
     int calculateFlashPredictions( larlite::storage_manager* larlite_io,
                                    larcv::IOManager* larcv_io,
-                                   std::vector<larflow::reco::NuVertexCandidate>* nuvtx_v);
+                                   EventData* event_data,
+                                   RecoData* reco_data);
 
-    
     // Keypoint processing
     bool processKeypoints(larcv::IOManager* larcv_io, EventData* event_data);
     
@@ -85,6 +95,9 @@ private:
     larflow::reco::SinkhornFlashDivergence* sinkhorn_calc;
     std::vector< std::vector<float> > _nuvtx_flashpred_v; ///< predictions for all nuvtx candidates
     std::vector< float > _nuvtx_sinkhorn_div_v;
+
+    // Container of possible vertex selections to use
+    std::map< std::string, std::unique_ptr<VertexSelectionBase> > _vertex_selection_methods_m;
 };
 
 } // namespace gen2ntuple

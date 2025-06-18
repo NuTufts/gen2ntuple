@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "larflow/Reco/NuVertexCandidate.h"
+#include "larflow/Reco/NuSelectionVariables.h"
 
 // Forward declarations
 class TFile;
@@ -48,7 +49,8 @@ public:
     larcv::IOManager* getLarcvIO() { return larcv_io_.get(); }
     TChain* getRecoIO() { return kpsreco_.get(); }
     std::vector<larflow::reco::NuVertexCandidate>* getNuCandidates() { return _nuvtx_v; };
-    
+    std::vector<larflow::reco::NuSelectionVariables>* getNuSelVariables() { return _nusel_v; };
+
     // Event synchronization
     struct EventID {
         int run;
@@ -78,7 +80,8 @@ private:
     std::unique_ptr<TChain> kpsreco_;
     
     // Reco Branches
-    std::vector< larflow::reco::NuVertexCandidate >* _nuvtx_v;
+    std::vector< larflow::reco::NuVertexCandidate >*   _nuvtx_v;
+    std::vector< larflow::reco::NuSelectionVariables>* _nusel_v;
     int kpsreco_run;
     int kpsreco_subrun;
     int kpsreco_event;

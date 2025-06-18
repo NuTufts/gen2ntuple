@@ -125,6 +125,7 @@ struct EventData {
     float vtxFracHitsOnCosmic;
 
     // Predicted Flash PE for the nu candidate
+    // filled by VertexSelector::calculateFlashPrediction
     float observedPEtotal;
     std::array<float, 32> observedPE;
 

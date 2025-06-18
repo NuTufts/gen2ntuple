@@ -19,6 +19,7 @@ include_directories(
 set(GEN2NTUPLE_SOURCES
   # Data structures
   EventData.cxx
+  RecoData.cxx
   BranchManager.cxx
   
   # Processing modules
@@ -31,6 +32,13 @@ set(GEN2NTUPLE_SOURCES
   PCAAnalyzer.cxx
   GeometryUtils.cxx
   ChargeCalculator.cxx
+
+  # VertexSelection modules
+  VertexSelectionBase.cxx
+  SelectNuVertex.cxx
+  HighestKPRankWithVisEnergy.cxx
+  GetNuCandidateIntimeCharge.cxx
+  FlashPEVertexSelection.cxx
   
   # Utilities
   WCFiducial.cxx
@@ -41,6 +49,7 @@ set(GEN2NTUPLE_SOURCES
 set(GEN2NTUPLE_HEADERS
   # Data structures
   EventData.h
+  RecoData.h
   BranchManager.h
   
   # Processing modules
@@ -53,6 +62,13 @@ set(GEN2NTUPLE_HEADERS
   PCAAnalyzer.h
   GeometryUtils.h
   ChargeCalculator.h
+
+  # VertexSelection modules
+  VertexSelectionBase.h
+  SelectNuVertex.h
+  HighestKPRankWithVisEnergy.h
+  GetNuCandidateIntimeCharge.h
+  FlashPEVertexSelection.h
   
   # Utilities
   WCFiducial.h

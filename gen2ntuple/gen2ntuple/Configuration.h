@@ -65,6 +65,11 @@ public:
      * @brief Get CNN model path
      */
     const std::string& getModelPath() const { return model_path_; }
+
+    /**
+     * @brief Get Vertex Selection Method Name
+     */
+    const std::string& getVertexSelection() const { return vertex_selection_; };
     
     // ===============================
     // Processing Configuration
@@ -122,6 +127,7 @@ private:
     std::string output_file_;
     std::string weight_file_;
     std::string model_path_;
+    std::string vertex_selection_;
     
     // Processing flags
     bool is_mc_;
