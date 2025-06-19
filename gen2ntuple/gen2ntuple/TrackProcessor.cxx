@@ -4,11 +4,11 @@
 #include <cmath>
 
 // LArLite includes
-#include "DataFormat/storage_manager.h"
-#include "DataFormat/track.h"
-#include "DataFormat/vertex.h"
-#include "DataFormat/mctrack.h"
-#include "DataFormat/mcpart.h"
+#include "larlite/DataFormat/storage_manager.h"
+#include "larlite/DataFormat/track.h"
+#include "larlite/DataFormat/vertex.h"
+#include "larlite/DataFormat/mctrack.h"
+#include "larlite/DataFormat/mcpart.h"
 
 // LArCV includes
 #include "larcv/core/DataFormat/IOManager.h"
@@ -16,12 +16,13 @@
 namespace gen2ntuple {
 
 TrackProcessor::TrackProcessor() 
-    : is_mc_(false), vertex_x_(0), vertex_y_(0), vertex_z_(0) {
+    : is_mc_(false), vertex_x_(0), vertex_y_(0), vertex_z_(0), prong_cnn_(nullptr) {
 }
 
-bool TrackProcessor::processEvent(larlite::storage_manager* larlite_io,
-                                 larcv::IOManager* larcv_io,
-                                 EventData* event_data) {
+bool TrackProcessor::processEvent( larlite::storage_manager* larlite_io,
+                                   larcv::IOManager* larcv_io,
+                                   EventData* event_data,
+                                   RecoData*  reco_data ) {
     
     if (!event_data) {
         std::cerr << "TrackProcessor: EventData pointer is null" << std::endl;
@@ -32,7 +33,7 @@ bool TrackProcessor::processEvent(larlite::storage_manager* larlite_io,
     setVertexPosition(event_data->vtxX, event_data->vtxY, event_data->vtxZ);
     
     // Extract track information from LArLite
-    if (!extractTrackInfo(larlite_io, event_data)) {
+    if (!extractTrackInfo(larlite_io, larcv_io, event_data, reco_data)) {
         // No tracks found - set defaults
         event_data->nTracks = 0;
         return true;
@@ -41,25 +42,30 @@ bool TrackProcessor::processEvent(larlite::storage_manager* larlite_io,
     return true;
 }
 
-bool TrackProcessor::extractTrackInfo(larlite::storage_manager* larlite_io,
-                                     EventData* event_data) {
+bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
+                                       larcv::IOManager* larcv_io,
+                                       EventData* event_data,
+                                       RecoData*  reco_data ) 
+{
     
     // Get track collection from LArLite
-    auto ev_track = larlite_io->get_data<larlite::event_track>("nuvertex");
-    if (!ev_track || ev_track->size() == 0) {
-        event_data->nTracks = 0;
-        return true;
+    int vtxIdx = event_data->vtxIndex;
+    if ( vtxIdx<0 || vtxIdx>=(int)reco_data->nuvtx_v.size() ) {
+        throw std::runtime_error("TrackProcess::extractTrackInfo -- vtxIndex unset -- needs to be selected in VertexSelector.")
     }
     
-    int n_tracks = std::min((int)ev_track->size(), EventData::MAX_TRACKS);
+    auto const& nuvtx = reco_data->nuvtx_v.at(vtxIdx);
+    
+    int n_tracks = std::min((int)nuvtx.track_v.size(), EventData::MAX_TRACKS);
     event_data->nTracks = n_tracks;
     
     // Process each track
     for (int i = 0; i < n_tracks; i++) {
-        const auto& track = ev_track->at(i);
+        const auto& track = nuvtx.track_v.at(i);
+        const auto& trackcluster = nuvtx.track_hitcluster_v.at(i);
         
         // Calculate geometric properties
-        if (!calculateTrackGeometry(track, i, event_data)) {
+        if (!calculateTrackGeometry(track, trackcluster, i, event_data)) {
             std::cerr << "TrackProcessor: Failed to calculate geometry for track " << i << std::endl;
             continue;
         }
@@ -73,6 +79,11 @@ bool TrackProcessor::extractTrackInfo(larlite::storage_manager* larlite_io,
         // Calculate energy
         if (!calculateTrackEnergy(track, i, event_data)) {
             std::cerr << "TrackProcessor: Failed to calculate energy for track " << i << std::endl;
+            continue;
+        }
+
+        if (!calculateTrackCharge(larcv_io, event_data, reco_data, vtxIdx, i)) {
+            std::cerr < "TrackProcessor: Failed to calculate track charge" << std::endl;
             continue;
         }
         
@@ -120,14 +131,42 @@ bool TrackProcessor::extractTrackInfo(larlite::storage_manager* larlite_io,
     return true;
 }
 
-bool TrackProcessor::calculateTrackGeometry(const larlite::track& track, int track_idx,
-                                           EventData* event_data) {
-    
+bool TrackProcessor::calculateTrackGeometry( int vtxIdx,
+                                             int track_idx,
+                                             EventData* event_data,
+                                             RecoData*  reco_data ) 
+{
+    auto const& nuvtx   = reco_data->nuvtx_v.at(vtxIdx);
+    auto const& track   = nuvtx.track_v.at(track_idx);
+    auto const& cluster = nuvtx.track_hitcluster_v.at(track_idx);
+
     if (track.NumberTrajectoryPoints() < 2) {
         // Not enough points to calculate geometry
         return false;
     }
-    
+
+    // contained
+    bool iscontained = True;
+    for (int ihit=0; ihit<(int)cluster.size(); ihit++ ) {
+        auto const& hit = cluster[ihit];
+        if ( ! WCFiducial::getME()->insideFV(hit[0],hit[1],hit[2])) {
+            iscontained = False;
+            break;
+        }
+    }
+    event_data->trackIsContainedInFV[track_idx] = (iscontained) ? 1 : 0;
+
+    // is secondary
+    if ( track_idx < (int)nuvtx.track_isSecondary_v.size() ) {
+        event_data->trackIsSecondary[track_idx] = nuvtx.track_isSecondary_v.at(track_idx);
+    }
+    else {
+        event_data->trackIsSecondary[track_idx] = -1;
+    }
+
+    // nhits
+    event_data->trackNHits[track_idx] = (int)cluster.size();
+
     // Start position
     auto start_pos = track.Vertex();
     event_data->trackStartPosX[track_idx] = start_pos.X();
@@ -141,10 +180,28 @@ bool TrackProcessor::calculateTrackGeometry(const larlite::track& track, int tra
     event_data->trackEndPosZ[track_idx] = end_pos.Z();
     
     // Start direction
-    auto start_dir = track.VertexDirection();
-    event_data->trackStartDirX[track_idx] = start_dir.X();
-    event_data->trackStartDirY[track_idx] = start_dir.Y();
-    event_data->trackStartDirZ[track_idx] = start_dir.Z();
+    // auto start_dir = track.VertexDirection();
+    // event_data->trackStartDirX[track_idx] = start_dir.X();
+    // event_data->trackStartDirY[track_idx] = start_dir.Y();
+    // event_data->trackStartDirZ[track_idx] = start_dir.Z();
+
+    // Start direction
+    auto trackDirPt1 = track.Vertex();
+    auto trackDirPt2 = track.Vertex();
+    for (int ipt=1; ipt<(int)track.NumberTrajectoryPoints(); ipt++) {
+        auto trackDirPt2 = track.LocationAtPoint(ipt);
+        double dist = (trackDirPt2-trackDirPt1).Mag();
+        if ( dist > 5.0 ) {
+            break;
+        }
+    }
+    auto trackDir = trackDirPt2-trackDirPt1;
+    if ( trackDir.Mag()>0.0 ) {
+        trackDir /= trackDir.Mag();
+    }
+    event_data->trackStartDirX[track_idx] = trackDir[0];
+    event_data->trackStartDirY[track_idx] = trackDir[1];
+    event_data->trackStartDirZ[track_idx] = trackDir[2];
     
     // Distance to vertex
     event_data->trackDistToVtx[track_idx] = calculateDistanceToVertex(track);
@@ -152,7 +209,8 @@ bool TrackProcessor::calculateTrackGeometry(const larlite::track& track, int tra
     return true;
 }
 
-bool TrackProcessor::calculateTrackAngles(const larlite::track& track, int track_idx,
+bool TrackProcessor::calculateTrackAngles(const larlite::track& track, 
+                                         int track_idx,
                                          EventData* event_data) {
     
     // Calculate cosine of angle with beam direction (z-axis)
@@ -295,11 +353,35 @@ float TrackProcessor::calculatePionRangeEnergy(float track_length) const {
     return track_length * 1.5f; // MeV per cm
 }
 
-bool TrackProcessor::isSecondaryTrack(const larlite::track& track) const {
-    // Simple heuristic: tracks starting far from vertex are likely secondary
-    float dist_to_vertex = calculateDistanceToVertex(track);
-    
-    return dist_to_vertex > 5.0f; // 5cm threshold
+bool TrackProcess::calculateTrackCharge(larcv::IOManager* larcv_io,
+                                        EventData* event_data,
+                                        RecoData* reco_data,
+                                        int vtxIdx,
+                                        int track_idx ) 
+{
+    auto const& nuvtx   = reco_data->nuvtx_v.at(vtxIdx);
+    auto const& track   = nuvtx.track_v.at(track_idx);
+    auto const& cluster = nuvtx.track_hitcluster_v.at(track_idx);
+
+    auto ev_img = (larcv::EventImage2D*)larcv_io->get_data("image2d","wire");
+    auto image2Dvec = ev_img->as_vector();
+
+    float clusterCharge = 0.;
+
+    for ( auto const& hit : cluster ) {
+        for (int p=0; p<3; ++p) {
+            auto const& img = image2Dvec.at(p);
+            int row = int( (hit.tick-2400)/6 );
+            int col = int( hit.targetwire[p] );
+            float pixVal = img.pixel(row,col);
+            if ( pixVal>=threshold )
+                clusterCharge += pixVal;
+        }
+    }
+
+    event_data->trackCharge[track_idx] = clusterCharge;
+
+    return bool;
 }
 
 } // namespace gen2ntuple

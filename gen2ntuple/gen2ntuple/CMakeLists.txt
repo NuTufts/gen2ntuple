@@ -6,13 +6,14 @@ find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 # Include directories for UBDL dependencies
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
+  ${Python3_INCLUDE_DIRS}  
   ${ROOT_INCLUDE_DIRS}
-  $ENV{LARCV_INCDIR}
-  $ENV{LARLITE_COREDIR}/..
-  $ENV{LARLITE_COREDIR}
-  $ENV{LARFLOW_INCDIR}
-  $ENV{UBLARCVAPP_INCDIR}
-  ${Python3_INCLUDE_DIRS}
+  ${LARLITE_INCLUDE_DIR}
+  ${LARCV_INCLUDE_DIR}
+  ${UBLARCVAPP_INCLUDE_DIR}
+  ${LARPID_INCLUDE_DIR}
+  ${LARFLOW_INCLUDE_DIR}  
+  ${TORCH_INCLUDE_DIRS}
 )
 
 # Core library sources
@@ -84,8 +85,10 @@ target_link_libraries(gen2ntuple
   ${ROOT_LIBRARIES}
   -L$ENV{LARCV_LIBDIR} -lLArCVCoreBase -lLArCVCoreDataFormat -lLArCVCoreProcessor
   -L$ENV{LARLITE_LIBDIR} -llarlite_Base -llarlite_DataFormat -llarlite_LArUtil
-  -L$ENV{LARFLOW_LIBDIR} -lLArFlow_Reco -lLArFlow_SCBoundary -lLArFlow_RecoUtils
+  -L$ENV{LARPID_LIBDIR} -lLArPID_Data -lLArPID_Model -lLArPID_Interface
+  -L$ENV{LARFLOW_LIBDIR} -lLArFlow_Reco -lLArFlow_SCBoundary -lLArFlow_RecoUtils LArFlow_ProngCNN
   -L$ENV{UBLARCVAPP_LIBDIR} -lLArCVApp_ubdllee -lLArCVApp_UBPhotonLib -lLArCVApp_ParticleToPixelUtils -lLArCVApp_MCTools -lLArCVApp_dbscan
+  ${TORCH_LIBRARIES}
   ${Python3_LIBRARIES}
 )
 

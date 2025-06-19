@@ -12,6 +12,8 @@
 #include <iostream>
 #include <memory>
 
+#include "larflow/ProngCNN/ProngCNNInterface.h"
+
 using namespace gen2ntuple;
 
 int main(int argc, char** argv) {
@@ -74,6 +76,10 @@ int main(int argc, char** argv) {
     }
     
     LOG_INFO("Branch setup complete");
+
+    LOG_INFO("Setup ProngCNN");
+    larflow::prongcnn::ProngCNNInterface prongcnn_model;
+    prongcnn_model.load_model( config.getModelPath() );
     
     // Create processing modules
     FileManager file_manager;
@@ -116,6 +122,7 @@ int main(int argc, char** argv) {
     
     TrackProcessor track_processor;
     track_processor.setMCMode(config.isMC());
+    track_processor.setProngCNNInterface( &prongcnn_model );
     
     LOG_INFO("Processing modules initialized");
     
@@ -174,9 +181,10 @@ int main(int argc, char** argv) {
         }
         
         // Process tracks
-        if (!track_processor.processEvent(file_manager.getLarliteIO(),
-                                         file_manager.getLarcvIO(),
-                                         &event_data)) {
+        if (!track_processor.processEvent( file_manager.getLarliteIO(),
+                                           file_manager.getLarcvIO(),
+                                           &event_data,
+                                           &reco_data)) {
             LOG_WARNING("Track processing failed for event " + 
                        std::to_string(event_data.event));
             // Continue processing even if track processing fails

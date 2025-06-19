@@ -157,11 +157,12 @@ struct EventData {
     int nTracks;
     
     // Basic info
-    std::array<bool, MAX_TRACKS> trackIsSecondary;
-    std::array<int, MAX_TRACKS> trackNHits;
+    std::array<bool, MAX_TRACKS>  trackIsSecondary;
+    std::array<int, MAX_TRACKS>   trackNHits;
+    std::array<int, MAX_TRACKS>   trackIsContainedInFV;
     
-    // Charge info: TrackProcessor::extractTrackInfo (place holder)
-    std::array<float, MAX_TRACKS> trackCharge;
+    // Charge info: TrackProcessor::extractTrackInfo 
+    std::array<float, MAX_TRACKS> trackCharge; //< TrackProcessor::calculateTrackCharge
     std::array<float, MAX_TRACKS> trackChargeFrac;
     std::array<float, MAX_TRACKS> trackHitFrac;
     
@@ -187,12 +188,12 @@ struct EventData {
     std::array<float, MAX_TRACKS> trackMuScore;
     std::array<float, MAX_TRACKS> trackPiScore;
     std::array<float, MAX_TRACKS> trackPrScore;
-    std::array<int, MAX_TRACKS> trackPID;
+    std::array<int, MAX_TRACKS>   trackPID;
     
     // CNN quality
     std::array<float, MAX_TRACKS> trackComp;
     std::array<float, MAX_TRACKS> trackPurity;
-    std::array<int, MAX_TRACKS> trackProcess;
+    std::array<int, MAX_TRACKS>   trackProcess;
     
     // Origin scores
     std::array<float, MAX_TRACKS> trackPrimaryScore;
@@ -203,9 +204,9 @@ struct EventData {
     std::array<float, MAX_TRACKS> trackRecoE;
     
     // Truth matching (MC only)
-    std::array<int, MAX_TRACKS> trackTruePDG;
-    std::array<int, MAX_TRACKS> trackTrueTID;
-    std::array<int, MAX_TRACKS> trackTrueMID;
+    std::array<int, MAX_TRACKS>   trackTruePDG;
+    std::array<int, MAX_TRACKS>   trackTrueTID;
+    std::array<int, MAX_TRACKS>   trackTrueMID;
     std::array<float, MAX_TRACKS> trackTrueE;
     std::array<float, MAX_TRACKS> trackTrueComp;
     std::array<float, MAX_TRACKS> trackTruePurity;

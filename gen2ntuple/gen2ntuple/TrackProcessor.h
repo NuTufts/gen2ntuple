@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EventData.h"
+#include "RecoData.h"
 #include <vector>
 #include <memory>
 
@@ -15,6 +16,12 @@ namespace larcv {
     class IOManager;
 }
 
+namespace larflow {
+namespace prongcnn {
+    class ProngCNNInterface;
+}
+}
+
 namespace gen2ntuple {
 
 class TrackProcessor {
@@ -27,29 +34,42 @@ public:
     void setVertexPosition(float x, float y, float z) { 
         vertex_x_ = x; vertex_y_ = y; vertex_z_ = z; 
     }
+    // Set ProngCNN model (non-owning pointer - caller retains ownership)
+    void setProngCNNInterface(larflow::prongcnn::ProngCNNInterface* prong_cnn) {
+        prong_cnn_ = prong_cnn;
+    }
+    
     
     // Main processing method
     bool processEvent(larlite::storage_manager* larlite_io,
                      larcv::IOManager* larcv_io,
-                     EventData* event_data);
+                     EventData* event_data,
+                     RecoData* reco_data);
     
 private:
     bool is_mc_;
     float vertex_x_, vertex_y_, vertex_z_;
+    larflow::prongcnn::ProngCNNInterface* prong_cnn_;  // Non-owning pointer
     
     // Track processing methods
-    bool extractTrackInfo(larlite::storage_manager* larlite_io,
-                         EventData* event_data);
+    bool extractTrackInfo( larlite::storage_manager* larlite_io,
+                           larcv::IOManager* larcv_io,
+                           EventData* event_data,
+                           RecoData* reco_data );
     
-    bool calculateTrackGeometry(const larlite::track& track, int track_idx,
-                               EventData* event_data);
+    bool calculateTrackGeometry(const larlite::track& track, 
+                                const larlite::larflowcluster& cluster,
+                                int track_idx,
+                                EventData* event_data);
     
     bool calculateTrackAngles(const larlite::track& track, int track_idx,
                              EventData* event_data);
     
-    bool calculateTrackCharge(larlite::storage_manager* larlite_io,
-                             larcv::IOManager* larcv_io,
-                             int track_idx, EventData* event_data);
+    bool calculateTrackCharge( larcv::IOManager* larcv_io,
+                               EventData* event_data,
+                               RecoData* reco_data,
+                               int vtxIdx,
+                               int track_idx );
     
     bool calculateTrackEnergy(const larlite::track& track, int track_idx,
                              EventData* event_data);
@@ -68,9 +88,6 @@ private:
     // Energy reconstruction
     float calculateMuonEnergy(const larlite::track& track) const;
     float calculatePionRangeEnergy(float track_length) const;
-    
-    // Secondary track identification
-    bool isSecondaryTrack(const larlite::track& track) const;
     
     // Constants
     static constexpr float BEAM_DIR_X = 0.0f;

@@ -4,11 +4,11 @@
 #include <cmath>
 
 // LArLite includes
-#include "DataFormat/storage_manager.h"
-#include "DataFormat/shower.h"
-#include "DataFormat/vertex.h"
-#include "DataFormat/mcshower.h"
-#include "DataFormat/mcpart.h"
+#include "larlite/DataFormat/storage_manager.h"
+#include "larlite/DataFormat/shower.h"
+#include "larlite/DataFormat/vertex.h"
+#include "larlite/DataFormat/mcshower.h"
+#include "larlite/DataFormat/mcpart.h"
 
 // LArCV includes
 #include "larcv/core/DataFormat/IOManager.h"

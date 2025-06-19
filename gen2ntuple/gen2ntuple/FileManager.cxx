@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 
 // LArLite includes
-#include "DataFormat/storage_manager.h"
+#include "larlite/DataFormat/storage_manager.h"
 
 // LArCV includes  
 #include "larcv/core/DataFormat/IOManager.h"

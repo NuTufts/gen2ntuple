@@ -146,8 +146,9 @@ def compare_ntuples(file1, file2, tree_name="EventTree", max_events=None, verbos
         'xsecWeight',
         'truePrimPartE',
         'trueSimPartPDG','trueSimPartTID','trueSimPartE',
+        'foundVertex', 'vtxX', 'vtxY', 'vtxZ', 'vtxScore',
         #'nTracks', 'nShowers',
-        #'foundVertex', 'vtxIndex', 'vtxX', 'vtxY', 'vtxZ', 'vtxScore',
+        #'vtxIndex', 
         #'predictedPEtotal', 'observedPEtotal', 'sinkhorn_div', 'fracerrPE'
     ]
     

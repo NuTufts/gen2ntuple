@@ -64,7 +64,7 @@ set(USE_TENSORRT OFF)
 set(TORCH_CUDA_ARCH_LIST "6.0;6.1;7.0;7.5;8.0;8.6")
 find_package( Torch )
 
-set( larpid_DIR "$ENV{LARPID_DIR}/lib/cmake/larpid")
+set( larpid_DIR "$ENV{LARPID_LIBDIR}/cmake/larpid")
 message( STATUS "looking for larpid cmake files at: ${larpid_DIR}")
 find_package( larpid )
 message( STATUS "Status for finding larpid: ${larpid_FOUND}" )
