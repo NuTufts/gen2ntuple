@@ -201,7 +201,13 @@ struct EventData {
     std::array<float, MAX_TRACKS> trackFromChargedScore;
     
     // Energy
+    std::array<float, MAX_TRACKS> trackLength;
     std::array<float, MAX_TRACKS> trackRecoE;
+    std::array<float, MAX_TRACKS> trackMuonE;
+    std::array<float, MAX_TRACKS> trackProtonE;
+    
+    // Classification status
+    std::array<int, MAX_TRACKS> trackClassified;
     
     // Truth matching (MC only)
     std::array<int, MAX_TRACKS>   trackTruePDG;

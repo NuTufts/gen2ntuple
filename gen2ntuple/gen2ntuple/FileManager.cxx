@@ -16,7 +16,6 @@ namespace gen2ntuple {
 FileManager::FileManager() 
     : is_mc_(false), 
     is_dlana_(false), 
-    _nuvtx_v(nullptr),
     current_entry_(0), 
     total_entries_(0) {
 }
@@ -181,6 +180,11 @@ bool FileManager::setupRecoIO() {
     for (const auto& recofile : kpsreco_files_ ) {
         kpsreco_->Add( recofile.c_str() );
     }
+
+    kpsreco_->SetBranchAddress("run",    &kpsreco_run );
+    kpsreco_->SetBranchAddress("subrun", &kpsreco_subrun );
+    kpsreco_->SetBranchAddress("event",  &kpsreco_event );
+
 
     return true;
 }

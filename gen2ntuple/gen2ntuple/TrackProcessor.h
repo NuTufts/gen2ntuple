@@ -89,6 +89,30 @@ private:
     float calculateMuonEnergy(const larlite::track& track) const;
     float calculatePionRangeEnergy(float track_length) const;
     
+    // ProngCNN integration
+    bool runProngCNN(larcv::IOManager* larcv_io,
+                     const larlite::track& track,
+                     const larlite::larflowcluster& cluster,
+                     int track_idx,
+                     EventData* event_data,
+                     RecoData* reco_data);
+    
+    void setDefaultPIDScores(int track_idx, EventData* event_data);
+    
+    void updateEnergyBasedOnPID(const larlite::track& track,
+                                int track_idx,
+                                EventData* event_data);
+    
+    void calculateChargeFractions(larcv::IOManager* larcv_io,
+                                  int track_idx,
+                                  EventData* event_data,
+                                  RecoData* reco_data);
+    
+    float calculateProtonEnergy(const larlite::track& track) const;
+    
+    int getPIDFromScores(float el_score, float ph_score, float mu_score,
+                        float pi_score, float pr_score) const;
+    
     // Constants
     static constexpr float BEAM_DIR_X = 0.0f;
     static constexpr float BEAM_DIR_Y = 0.0f; 

@@ -48,8 +48,6 @@ public:
     larlite::storage_manager* getLarliteIO() { return larlite_io_.get(); }
     larcv::IOManager* getLarcvIO() { return larcv_io_.get(); }
     TChain* getRecoIO() { return kpsreco_.get(); }
-    std::vector<larflow::reco::NuVertexCandidate>* getNuCandidates() { return _nuvtx_v; };
-    std::vector<larflow::reco::NuSelectionVariables>* getNuSelVariables() { return _nusel_v; };
 
     // Event synchronization
     struct EventID {
@@ -78,17 +76,13 @@ private:
     std::unique_ptr<larlite::storage_manager> larlite_io_;
     std::unique_ptr<larcv::IOManager> larcv_io_;
     std::unique_ptr<TChain> kpsreco_;
-    
-    // Reco Branches
-    std::vector< larflow::reco::NuVertexCandidate >*   _nuvtx_v;
-    std::vector< larflow::reco::NuSelectionVariables>* _nusel_v;
-    int kpsreco_run;
-    int kpsreco_subrun;
-    int kpsreco_event;
 
     // Event tracking
     int current_entry_;
     int total_entries_;
+    int kpsreco_run;
+    int kpsreco_subrun;
+    int kpsreco_event;
     
     // Helper methods
     bool setupLarliteIO();

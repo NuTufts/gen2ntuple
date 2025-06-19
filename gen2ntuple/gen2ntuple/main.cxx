@@ -57,8 +57,8 @@ int main(int argc, char** argv) {
     
     // Create data structures
     EventData event_data;
-    RecoData reco_data;
-    POTData pot_data;
+    RecoData  reco_data;
+    POTData   pot_data;
     
     // Create branch manager
     BranchManager branch_manager(output_file.get(), config.isMC(), !config.isKeypointsDisabled());
@@ -76,10 +76,6 @@ int main(int argc, char** argv) {
     }
     
     LOG_INFO("Branch setup complete");
-
-    LOG_INFO("Setup ProngCNN");
-    larflow::prongcnn::ProngCNNInterface prongcnn_model;
-    prongcnn_model.load_model( config.getModelPath() );
     
     // Create processing modules
     FileManager file_manager;
@@ -107,6 +103,9 @@ int main(int argc, char** argv) {
         std::cerr << e.what() << std::endl;
     }
 
+    LOG_INFO("Setup ProngCNN");
+    larflow::prongcnn::ProngCNNInterface prongcnn_model;
+    prongcnn_model.load_model( config.getModelPath() );
 
     // Create processors
     std::unique_ptr<MCTruthProcessor> mc_processor;
@@ -131,12 +130,12 @@ int main(int argc, char** argv) {
     int max_events = config.getMaxEvents();
     int start_event = config.getStartEvent();
     
-    // Skip to start event
-    for (int i = 0; i < start_event && !file_manager.isEndOfFile(); i++) {
-        if (!file_manager.nextEvent()) {
-            break;
-        }
-    }
+    // // Skip to start event
+    // for (int i = 0; i < start_event && !file_manager.isEndOfFile(); i++) {
+    //     if (!file_manager.nextEvent()) {
+    //         break;
+    //     }
+    // }
     
     LOG_INFO("Starting event processing from event " + std::to_string(start_event));
     
@@ -167,9 +166,8 @@ int main(int argc, char** argv) {
                 continue;
             }
         }
-        
-        // Process vertex selection
 
+        // Process vertex selection
         if (!vertex_selector.processEvent(file_manager.getLarliteIO(), 
                                          file_manager.getLarcvIO(), 
                                          &event_data, 

@@ -20,12 +20,15 @@ namespace gen2ntuple {
 
     public:
 
-        RecoData() {};
-        ~RecoData() {};
+        RecoData() : nuvtx_v(nullptr), nusel_v(nullptr) {};
+        ~RecoData() {
+            if (nuvtx_v) delete nuvtx_v;
+            if (nusel_v) delete nusel_v;
+        };
 
-        int run;
-        int subrun;
-        int event;
+        // int run;
+        // int subrun;
+        // int event;
         std::vector<larflow::reco::NuVertexCandidate>*    nuvtx_v;
         std::vector<larflow::reco::NuSelectionVariables>* nusel_v;
 
