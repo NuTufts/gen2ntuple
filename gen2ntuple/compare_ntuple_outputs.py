@@ -147,6 +147,7 @@ def compare_ntuples(file1, file2, tree_name="EventTree", max_events=None, verbos
         'truePrimPartE',
         'trueSimPartPDG','trueSimPartTID','trueSimPartE',
         'foundVertex', 'vtxX', 'vtxY', 'vtxZ', 'vtxScore',
+        'nTracks','trackPID','trackElScore','trackPhScore','trackMuScore','trackPiScore','trackPrScore',
         #'nTracks', 'nShowers',
         #'vtxIndex', 
         #'predictedPEtotal', 'observedPEtotal', 'sinkhorn_div', 'fracerrPE'
@@ -158,7 +159,7 @@ def compare_ntuples(file1, file2, tree_name="EventTree", max_events=None, verbos
         
         # Get event identifier
         try:
-            event_id = f"{tree1.run}/{tree1.subrun}/{tree1.event}"
+            event_id = f"Entry[{i}] {tree1.run}/{tree1.subrun}/{tree1.event}"
         except:
             event_id = f"Entry {i}"
         

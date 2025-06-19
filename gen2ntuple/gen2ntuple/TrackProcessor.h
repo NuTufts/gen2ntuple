@@ -16,9 +16,9 @@ namespace larcv {
     class IOManager;
 }
 
-namespace larflow {
-namespace prongcnn {
-    class ProngCNNInterface;
+namespace larpid {
+namespace model {
+    class TorchModel;
 }
 }
 
@@ -35,8 +35,8 @@ public:
         vertex_x_ = x; vertex_y_ = y; vertex_z_ = z; 
     }
     // Set ProngCNN model (non-owning pointer - caller retains ownership)
-    void setProngCNNInterface(larflow::prongcnn::ProngCNNInterface* prong_cnn) {
-        prong_cnn_ = prong_cnn;
+    void setProngCNNInterface(larpid::model::TorchModel* larpid_model ) {
+        larpid_cnn_ = larpid_model;
     }
     
     
@@ -49,7 +49,7 @@ public:
 private:
     bool is_mc_;
     float vertex_x_, vertex_y_, vertex_z_;
-    larflow::prongcnn::ProngCNNInterface* prong_cnn_;  // Non-owning pointer
+    larpid::model::TorchModel* larpid_cnn_;  // Non-owning pointer
     
     // Track processing methods
     bool extractTrackInfo( larlite::storage_manager* larlite_io,
@@ -94,6 +94,7 @@ private:
                      const larlite::track& track,
                      const larlite::larflowcluster& cluster,
                      int track_idx,
+                     int& num_good_planes,
                      EventData* event_data,
                      RecoData* reco_data);
     

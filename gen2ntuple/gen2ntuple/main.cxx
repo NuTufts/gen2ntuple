@@ -12,7 +12,7 @@
 #include <iostream>
 #include <memory>
 
-#include "larflow/ProngCNN/ProngCNNInterface.h"
+#include "larpid/model/TorchModel.h"
 
 using namespace gen2ntuple;
 
@@ -104,8 +104,9 @@ int main(int argc, char** argv) {
     }
 
     LOG_INFO("Setup ProngCNN");
-    larflow::prongcnn::ProngCNNInterface prongcnn_model;
-    prongcnn_model.load_model( config.getModelPath() );
+    bool larpid_debug = true;
+    larpid::model::TorchModel larpid_model;
+    larpid_model.Initialize( config.getModelPath(), larpid_debug );
 
     // Create processors
     std::unique_ptr<MCTruthProcessor> mc_processor;
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
     
     TrackProcessor track_processor;
     track_processor.setMCMode(config.isMC());
-    track_processor.setProngCNNInterface( &prongcnn_model );
+    track_processor.setProngCNNInterface( &larpid_model );
     
     LOG_INFO("Processing modules initialized");
     

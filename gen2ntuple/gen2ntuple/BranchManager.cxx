@@ -266,6 +266,12 @@ void BranchManager::setupTrackBranches(EventData* data) {
     createArrayBranch(event_tree_, "trackDistToVtx", data->trackDistToVtx.data(), 
                      "nTracks", EventData::MAX_TRACKS, "F");
     
+    // CNN status
+    createArrayBranch(event_tree_, "trackClassified", data->trackClassified.data(), 
+                     "nTracks", EventData::MAX_TRACKS, "I");
+    createArrayBranch(event_tree_, "trackNGoodPlanes", data->trackNGoodPlanes.data(), 
+                     "nTracks", EventData::MAX_TRACKS, "I");
+
     // CNN scores
     createArrayBranch(event_tree_, "trackElScore", data->trackElScore.data(), 
                      "nTracks", EventData::MAX_TRACKS, "F");

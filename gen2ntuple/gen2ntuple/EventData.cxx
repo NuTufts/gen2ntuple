@@ -150,23 +150,27 @@ void EventData::clear() {
     trackCosThetaY.fill(-999.0);
     trackDistToVtx.fill(-999.0);
     
+    // Classification status
+    trackClassified.fill(0);
+    trackNGoodPlanes.fill(0);
+
     // CNN scores
-    trackElScore.fill(-999.0);
-    trackPhScore.fill(-999.0);
-    trackMuScore.fill(-999.0);
-    trackPiScore.fill(-999.0);
-    trackPrScore.fill(-999.0);
-    trackPID.fill(0);
+    trackElScore.fill(-99.0);
+    trackPhScore.fill(-99.0);
+    trackMuScore.fill(-99.0);
+    trackPiScore.fill(-99.0);
+    trackPrScore.fill(-99.0);
+    trackPID.fill(-1);
     
     // CNN quality
-    trackComp.fill(-999.0);
-    trackPurity.fill(-999.0);
+    trackComp.fill(-1.0);
+    trackPurity.fill(-1.0);
     trackProcess.fill(-1);
     
     // Origin scores
-    trackPrimaryScore.fill(-999.0);
-    trackFromNeutralScore.fill(-999.0);
-    trackFromChargedScore.fill(-999.0);
+    trackPrimaryScore.fill(-99.0);
+    trackFromNeutralScore.fill(-99.0);
+    trackFromChargedScore.fill(-99.0);
     
     // Energy
     trackRecoE.fill(-999.0);

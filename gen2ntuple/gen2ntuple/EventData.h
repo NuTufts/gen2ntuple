@@ -181,6 +181,10 @@ struct EventData {
     std::array<float, MAX_TRACKS> trackCosTheta;
     std::array<float, MAX_TRACKS> trackCosThetaY;
     std::array<float, MAX_TRACKS> trackDistToVtx;
+
+    // Classification status
+    std::array<int, MAX_TRACKS> trackClassified;
+    std::array<int, MAX_TRACKS> trackNGoodPlanes;
     
     // CNN scores
     std::array<float, MAX_TRACKS> trackElScore;
@@ -206,8 +210,6 @@ struct EventData {
     std::array<float, MAX_TRACKS> trackMuonE;
     std::array<float, MAX_TRACKS> trackProtonE;
     
-    // Classification status
-    std::array<int, MAX_TRACKS> trackClassified;
     
     // Truth matching (MC only)
     std::array<int, MAX_TRACKS>   trackTruePDG;

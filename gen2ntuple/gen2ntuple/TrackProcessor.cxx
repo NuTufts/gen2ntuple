@@ -2,6 +2,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 // LArLite includes
 #include "larlite/DataFormat/storage_manager.h"
@@ -15,8 +16,9 @@
 #include "larcv/core/DataFormat/IOManager.h"
 #include "larcv/core/DataFormat/EventImage2D.h"
 
-// LArFlow includes
-#include "larflow/ProngCNN/ProngCNNInterface.h"
+// LArPID includes
+#include "larpid/interface/LArPIDInterface.h"
+#include "larpid/model/TorchModel.h"
 
 // UBDLLee includes
 #include "ublarcvapp/ubdllee/dwall.h"
@@ -27,7 +29,7 @@
 namespace gen2ntuple {
 
 TrackProcessor::TrackProcessor() 
-    : is_mc_(false), vertex_x_(0), vertex_y_(0), vertex_z_(0), prong_cnn_(nullptr) {
+    : is_mc_(false), vertex_x_(0), vertex_y_(0), vertex_z_(0), larpid_cnn_(nullptr) {
 }
 
 bool TrackProcessor::processEvent( larlite::storage_manager* larlite_io,
@@ -61,6 +63,13 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
     
     // Get track collection from LArLite
     int vtxIdx = event_data->vtxIndex;
+
+    if ( reco_data->nuvtx_v->size()==0 ) {
+        // no reco vertices in this event. just return.
+        std::cout << "TrackProcessor::extractTrackInfo - no vertex in event" << std::endl;
+        return true;
+    }
+
     if ( vtxIdx<0 || vtxIdx>=(int)reco_data->nuvtx_v->size() ) {
         throw std::runtime_error("TrackProcess::extractTrackInfo -- vtxIndex unset -- needs to be selected in VertexSelector.");
     }
@@ -69,6 +78,8 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
     
     int n_tracks = std::min((int)nuvtx.track_v.size(), EventData::MAX_TRACKS);
     event_data->nTracks = n_tracks;
+
+    std::cout << "TrackProcessor::extractTrackInfo - number of Tracks = " << n_tracks << std::endl;
     
     // Process each track
     for (int i = 0; i < n_tracks; i++) {
@@ -99,8 +110,9 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
         }
         
         // Run ProngCNN for particle classification if available
-        if (prong_cnn_ != nullptr) {
-            if (!runProngCNN(larcv_io, track, trackcluster, i, event_data, reco_data)) {
+        int num_good_planes = 0;
+        if (larpid_cnn_ != nullptr) {
+            if (!runProngCNN(larcv_io, track, trackcluster, i, num_good_planes, event_data, reco_data)) {
                 // Fall back to default values if CNN fails
                 setDefaultPIDScores(i, event_data);
             }
@@ -108,6 +120,7 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
             // Set default values if no CNN available
             setDefaultPIDScores(i, event_data);
         }
+        event_data->trackNGoodPlanes[i] = num_good_planes; 
         
         // Update energy based on PID classification
         updateEnergyBasedOnPID(track, i, event_data);
@@ -407,11 +420,14 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
                                 const larlite::track& track,
                                 const larlite::larflowcluster& cluster,
                                 int track_idx,
+                                int& num_good_planes,
                                 EventData* event_data,
                                 RecoData* reco_data) {
     
-    if (!prong_cnn_) return false;
+    num_good_planes = 0;
     
+    if (!larpid_cnn_) return false;
+
     try {
         // Get vertex information
         int vtxIdx = event_data->vtxIndex;
@@ -432,50 +448,92 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
         auto end_pos = track.LocationAtPoint( track.NumberTrajectoryPoints()-1 );
         
         // Run ProngCNN
-        std::vector<float> scores;
-        std::vector<float> origin_scores;
-        float completeness, purity;
-        int process_type;
-        int ngood_planes;
         bool preserve_shower_pixels = false;
+        bool success = false;   
+
+        // get spacepoints
+        std::vector< std::vector<float> > hitcluster;
+        hitcluster.reserve( cluster.size() );
+        std::cout << "track[" << track_idx << "] hitcluster size=" << cluster.size() << std::endl;
+        for (auto const& hit : cluster ) {
+            std::vector<float> pt(7,0);
+            pt[0] = hit[0];
+            pt[1] = hit[1];
+            pt[2] = hit[2];
+            pt[3] = hit.tick;
+            pt[4] = hit.targetwire[0];
+            pt[5] = hit.targetwire[1];
+            pt[6] = hit.targetwire[2];
+            // std::stringstream sspt;
+            // sspt << "( ";
+            // for ( auto const& val : pt )
+            //   sspt << val << " ";
+            // sspt << ")";
+            // std::cout << sspt.str() << std::endl;
+            hitcluster.push_back( pt );
+        }
+
+        std::vector< std::vector<larpid::data::CropPixData_t> > larpid_input
+         = larpid::interface::make_prongCNN_input_sparse_images( *larcv_io, 
+            hitcluster, end_pos, preserve_shower_pixels );
         
-        bool success = prong_cnn_->get_larpid_prong_scores(
-            end_pos, cluster, *larcv_io,
-            preserve_shower_pixels,
-            scores, origin_scores, process_type,
-            purity, completeness, ngood_planes
-        );
+        int ngood_planes = 0;
+        for (size_t p=0; p<3; p++ ) {
+            std::cout << "track["  << track_idx << "] plane[" <<  p << "] npixels=" << larpid_input[p].size() << std::endl;
+            if ( larpid_input[p].size()>=10 )
+                ngood_planes++;
+        }
+        std::cout << "track[" << track_idx << "] num good planes=" << ngood_planes << std::endl;
+        num_good_planes = ngood_planes;
+
+        larpid::data::ModelOutput output;
         
-        if (success && scores.size() >= 5) {
-            // Assign scores
-            event_data->trackElScore[track_idx] = scores[0];
-            event_data->trackPhScore[track_idx] = scores[1];
-            event_data->trackMuScore[track_idx] = scores[2];
-            event_data->trackPiScore[track_idx] = scores[3];
-            event_data->trackPrScore[track_idx] = scores[4];
-            
-            // Quality metrics
-            event_data->trackComp[track_idx] = completeness;
-            event_data->trackPurity[track_idx] = purity;
-            event_data->trackProcess[track_idx] = process_type;
-            
-            // Process type scores (if available)
-            if (origin_scores.size() >= 3) {
-                event_data->trackPrimaryScore[track_idx] = origin_scores[0];
-                event_data->trackFromChargedScore[track_idx] = origin_scores[1];
-                event_data->trackFromNeutralScore[track_idx] = origin_scores[2];
+        if ( ngood_planes>=2 ) {
+            try {
+                output = larpid_cnn_->run_inference( larpid_input );
+                success = true;
+                std::cout << "LArPID inference successful" << std::endl;
             }
+            catch ( std::exception& e ) {
+                success = false;
+                std::stringstream errmsg;
+                errmsg << "Error running LArPID model" << std::endl;
+                errmsg << e.what() << std::endl;
+                throw std::runtime_error(errmsg.str());
+            }
+        }
+        
+        if (success) {
+            // Assign scores
+            event_data->trackElScore[track_idx] = output.classScores[0];
+            event_data->trackPhScore[track_idx] = output.classScores[1];
+            event_data->trackMuScore[track_idx] = output.classScores[2];
+            event_data->trackPiScore[track_idx] = output.classScores[3];
+            event_data->trackPrScore[track_idx] = output.classScores[4];
             
             // Determine PID
-            event_data->trackPID[track_idx] = getPIDFromScores(
-                scores[0], scores[1], scores[2], scores[3], scores[4]
-            );
+            event_data->trackPID[track_idx] = output.predictedPID;
             
+            // Reco Quality metrics
+            event_data->trackComp[track_idx]    = output.completeness;
+            event_data->trackPurity[track_idx]  = output.purity;
+            
+            
+            // Process type scores (if available)
+            event_data->trackProcess[track_idx] = output.predictedProcess;
+            event_data->trackPrimaryScore[track_idx]     = output.processScores[0];
+            event_data->trackFromChargedScore[track_idx] = output.processScores[1];
+            event_data->trackFromNeutralScore[track_idx] = output.processScores[2];
+
             // Mark as classified
             event_data->trackClassified[track_idx] = 1;
             
             return true;
         }
+        else {
+            event_data->trackClassified[track_idx] = 0;
+        }
+    
     } catch (const std::exception& e) {
         std::cerr << "TrackProcessor: ProngCNN failed with error: " 
                   << e.what() << std::endl;
@@ -486,22 +544,22 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
 
 void TrackProcessor::setDefaultPIDScores(int track_idx, EventData* event_data) {
     // Default to muon-like
-    event_data->trackElScore[track_idx] = 0.1f;
-    event_data->trackPhScore[track_idx] = 0.1f;
-    event_data->trackMuScore[track_idx] = 0.6f;
-    event_data->trackPiScore[track_idx] = 0.1f;
-    event_data->trackPrScore[track_idx] = 0.1f;
-    event_data->trackPID[track_idx] = PID_MUON;
+    event_data->trackElScore[track_idx] = -99.0f;
+    event_data->trackPhScore[track_idx] = -99.0f;
+    event_data->trackMuScore[track_idx] = -99.0f;
+    event_data->trackPiScore[track_idx] = -99.0f;
+    event_data->trackPrScore[track_idx] = -99.0f;
+    event_data->trackPID[track_idx]     = -1;
     
     // Default quality metrics
-    event_data->trackComp[track_idx] = 0.5f;
-    event_data->trackPurity[track_idx] = 0.5f;
-    event_data->trackProcess[track_idx] = 0;
+    event_data->trackComp[track_idx]    = -1.0f;
+    event_data->trackPurity[track_idx]  = -1.0f;
+    event_data->trackProcess[track_idx] = -1;
     
     // Default origin scores
-    event_data->trackPrimaryScore[track_idx] = 0.8f;
-    event_data->trackFromNeutralScore[track_idx] = 0.1f;
-    event_data->trackFromChargedScore[track_idx] = 0.1f;
+    event_data->trackPrimaryScore[track_idx]     = -99.0f;
+    event_data->trackFromNeutralScore[track_idx] = -99.0f;
+    event_data->trackFromChargedScore[track_idx] = -99.0f;
     
     // Mark as unclassified
     event_data->trackClassified[track_idx] = 0;
