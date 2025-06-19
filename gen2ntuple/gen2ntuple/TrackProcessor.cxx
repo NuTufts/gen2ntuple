@@ -425,7 +425,7 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
                                 RecoData* reco_data) {
     
     num_good_planes = 0;
-    
+
     if (!larpid_cnn_) return false;
 
     try {
@@ -522,8 +522,8 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
             // Process type scores (if available)
             event_data->trackProcess[track_idx] = output.predictedProcess;
             event_data->trackPrimaryScore[track_idx]     = output.processScores[0];
-            event_data->trackFromChargedScore[track_idx] = output.processScores[1];
-            event_data->trackFromNeutralScore[track_idx] = output.processScores[2];
+            event_data->trackFromChargedScore[track_idx] = output.processScores[2];
+            event_data->trackFromNeutralScore[track_idx] = output.processScores[1];
 
             // Mark as classified
             event_data->trackClassified[track_idx] = 1;

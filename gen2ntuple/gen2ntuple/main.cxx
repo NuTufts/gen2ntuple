@@ -6,6 +6,7 @@
 #include "MCTruthProcessor.h"
 #include "VertexSelector.h"
 #include "TrackProcessor.h"
+#include "ShowerProcessor.h"
 
 #include "TFile.h"
 #include "TTree.h"
@@ -124,6 +125,10 @@ int main(int argc, char** argv) {
     track_processor.setMCMode(config.isMC());
     track_processor.setProngCNNInterface( &larpid_model );
     
+    ShowerProcessor shower_processor;
+    shower_processor.setMCMode(config.isMC());
+    shower_processor.setLArPIDInterface( &larpid_model );
+    
     LOG_INFO("Processing modules initialized");
     
     // Event processing loop
@@ -189,14 +194,23 @@ int main(int argc, char** argv) {
             // Continue processing even if track processing fails
         }
         
-        // TODO: Add shower processing
-        // For now, set dummy values
-        event_data.nShowers = 0;
+        // Process showers
+        if (!shower_processor.processEvent( file_manager.getLarliteIO(),
+                                           file_manager.getLarcvIO(),
+                                           &event_data,
+                                           &reco_data)) {
+            LOG_WARNING("Shower processing failed for event " + 
+                       std::to_string(event_data.event));
+            // Continue processing even if shower processing fails
+        }
         
         // Calculate total reconstructed energy
         event_data.recoNuE = 0.0;
         for (int i = 0; i < event_data.nTracks; i++) {
             event_data.recoNuE += event_data.trackRecoE[i];
+        }
+        for (int i = 0; i < event_data.nShowers; i++) {
+            event_data.recoNuE += event_data.showerRecoE[i];
         }
         
         // Fill the tree

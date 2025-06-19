@@ -228,6 +228,7 @@ struct EventData {
     // Basic info
     std::array<bool, MAX_SHOWERS> showerIsSecondary;
     std::array<int, MAX_SHOWERS> showerNHits;
+    std::array<int, MAX_SHOWERS> showerIsContainedInFV;
     
     // Charge info
     std::array<float, MAX_SHOWERS> showerCharge;
@@ -246,6 +247,10 @@ struct EventData {
     std::array<float, MAX_SHOWERS> showerCosTheta;
     std::array<float, MAX_SHOWERS> showerCosThetaY;
     std::array<float, MAX_SHOWERS> showerDistToVtx;
+    
+    // Classification status
+    std::array<int, MAX_SHOWERS> showerClassified;
+    std::array<int, MAX_SHOWERS> showerNGoodPlanes;
     
     // CNN scores
     std::array<float, MAX_SHOWERS> showerElScore;
@@ -270,6 +275,8 @@ struct EventData {
     std::array<float, MAX_SHOWERS> showerRecoEU;
     std::array<float, MAX_SHOWERS> showerRecoEV;
     std::array<float, MAX_SHOWERS> showerRecoEY;
+    std::array<float, MAX_SHOWERS> showerLength;
+    std::array<float, MAX_SHOWERS> showerOpeningAngle;
     
     // Truth matching (MC only)
     std::array<int, MAX_SHOWERS> showerTruePDG;

@@ -147,7 +147,10 @@ def compare_ntuples(file1, file2, tree_name="EventTree", max_events=None, verbos
         'truePrimPartE',
         'trueSimPartPDG','trueSimPartTID','trueSimPartE',
         'foundVertex', 'vtxX', 'vtxY', 'vtxZ', 'vtxScore',
-        'nTracks','trackPID','trackElScore','trackPhScore','trackMuScore','trackPiScore','trackPrScore',
+        'nTracks',  'trackPID','trackElScore', 'trackPhScore', 'trackMuScore', 'trackPiScore', 'trackPrScore',
+        'trackComp','trackPurity','trackProcess','trackPrimaryScore','trackFromNeutral','trackFromCharged',
+        'nShowers','showerPID','showerElScore','showerPhScore','showerMuScore','showerPiScore','showerPrScore',
+        'showerComp','showerPurity','showerProcess','showerPrimaryScore','showerFromNeutral','showerFromCharged',
         #'nTracks', 'nShowers',
         #'vtxIndex', 
         #'predictedPEtotal', 'observedPEtotal', 'sinkhorn_div', 'fracerrPE'
