@@ -22,6 +22,10 @@ namespace model {
 }
 }
 
+#include "larpid/data/CropPixData_t.h"
+#include "ublarcvapp/MCTools/MCPixelPGraph.h"
+#include "ublarcvapp/MCTools/MCPixelPMap.h"
+
 namespace gen2ntuple {
 
 class TrackProcessor {
@@ -39,7 +43,13 @@ public:
         larpid_cnn_ = larpid_model;
     }
     
-    
+    void setMCPixelUtils( ublarcvapp::mctools::MCPixelPGraph* mcpg,
+                          ublarcvapp::mctools::MCPixelPMap* mcpm )
+    {
+        _mcpg = mcpg;
+        _mcpm = mcpm;
+    }
+
     // Main processing method
     bool processEvent(larlite::storage_manager* larlite_io,
                      larcv::IOManager* larcv_io,
@@ -50,6 +60,8 @@ private:
     bool is_mc_;
     float vertex_x_, vertex_y_, vertex_z_;
     larpid::model::TorchModel* larpid_cnn_;  // Non-owning pointer
+    ublarcvapp::mctools::MCPixelPGraph* _mcpg;
+    ublarcvapp::mctools::MCPixelPMap*   _mcpm;
     
     // Track processing methods
     bool extractTrackInfo( larlite::storage_manager* larlite_io,
@@ -81,8 +93,6 @@ private:
     // Geometric calculations
     float calculateTrackLength(const larlite::track& track) const;
     float calculateDistanceToVertex(const larlite::track& track) const;
-    float calculateCosTheta(const larlite::track& track) const;
-    float calculateCosThetaY(const larlite::track& track) const;
     std::vector<float> getTrackDirection(const larlite::track& track) const;
     
     // Energy reconstruction
@@ -100,19 +110,18 @@ private:
     
     void setDefaultPIDScores(int track_idx, EventData* event_data);
     
-    void updateEnergyBasedOnPID(const larlite::track& track,
-                                int track_idx,
-                                EventData* event_data);
-    
-    void calculateChargeFractions(larcv::IOManager* larcv_io,
-                                  int track_idx,
-                                  EventData* event_data,
-                                  RecoData* reco_data);
+    bool updateEnergyBasedOnPID( int vtxIdx, int track_idx,
+                                 EventData* event_data,
+                                 RecoData* reco_data );
     
     float calculateProtonEnergy(const larlite::track& track) const;
     
     int getPIDFromScores(float el_score, float ph_score, float mu_score,
                         float pi_score, float pr_score) const;
+
+    bool getMCProngParticles( larcv::IOManager* larcv_io,
+            std::vector< std::vector<larpid::data::CropPixData_t> >& prong_vv,
+            EventData* event_data, int track_idx );
     
     // Constants
     static constexpr float BEAM_DIR_X = 0.0f;

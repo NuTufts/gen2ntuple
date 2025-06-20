@@ -308,7 +308,7 @@ void BranchManager::setupTrackBranches(EventData* data) {
     
     // Truth matching (MC only)
     if (is_mc_) {
-        createArrayBranch(event_tree_, "trackTruePDG", data->trackTruePDG.data(), 
+        createArrayBranch(event_tree_, "trackTruePID", data->trackTruePID.data(), 
                          "nTracks", EventData::MAX_TRACKS, "I");
         createArrayBranch(event_tree_, "trackTrueTID", data->trackTrueTID.data(), 
                          "nTracks", EventData::MAX_TRACKS, "I");
@@ -319,6 +319,19 @@ void BranchManager::setupTrackBranches(EventData* data) {
         createArrayBranch(event_tree_, "trackTrueComp", data->trackTrueComp.data(), 
                          "nTracks", EventData::MAX_TRACKS, "F");
         createArrayBranch(event_tree_, "trackTruePurity", data->trackTruePurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+        createArrayBranch(event_tree_, "trackTruePurity", data->trackTruePurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+
+        createArrayBranch(event_tree_, "trackTrueElPurity", data->trackTrueElPurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+        createArrayBranch(event_tree_, "trackTruePhPurity", data->trackTruePhPurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+        createArrayBranch(event_tree_, "trackTrueMuPurity", data->trackTrueMuPurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+        createArrayBranch(event_tree_, "trackTruePiPurity", data->trackTruePiPurity.data(), 
+                         "nTracks", EventData::MAX_TRACKS, "F");
+        createArrayBranch(event_tree_, "trackTruePrPurity", data->trackTruePrPurity.data(), 
                          "nTracks", EventData::MAX_TRACKS, "F");
     }
 }
@@ -404,7 +417,7 @@ void BranchManager::setupShowerBranches(EventData* data) {
     
     // Truth matching (MC only)
     if (is_mc_) {
-        createArrayBranch(event_tree_, "showerTruePDG", data->showerTruePDG.data(), 
+        createArrayBranch(event_tree_, "showerTruePID", data->showerTruePID.data(), 
                          "nShowers", EventData::MAX_SHOWERS, "I");
         createArrayBranch(event_tree_, "showerTrueTID", data->showerTrueTID.data(), 
                          "nShowers", EventData::MAX_SHOWERS, "I");
@@ -415,6 +428,17 @@ void BranchManager::setupShowerBranches(EventData* data) {
         createArrayBranch(event_tree_, "showerTrueComp", data->showerTrueComp.data(), 
                          "nShowers", EventData::MAX_SHOWERS, "F");
         createArrayBranch(event_tree_, "showerTruePurity", data->showerTruePurity.data(), 
+                         "nShowers", EventData::MAX_SHOWERS, "F");
+
+        createArrayBranch(event_tree_, "showerTrueElPurity", data->showerTrueElPurity.data(), 
+                         "nShowers", EventData::MAX_SHOWERS, "F");
+        createArrayBranch(event_tree_, "showerTruePhPurity", data->showerTruePhPurity.data(), 
+                         "nShowers", EventData::MAX_SHOWERS, "F");
+        createArrayBranch(event_tree_, "showerTrueMuPurity", data->showerTrueMuPurity.data(), 
+                         "nShowers", EventData::MAX_SHOWERS, "F");
+        createArrayBranch(event_tree_, "showerTruePiPurity", data->showerTruePiPurity.data(), 
+                         "nShowers", EventData::MAX_SHOWERS, "F");
+        createArrayBranch(event_tree_, "showerTruePrPurity", data->showerTruePrPurity.data(), 
                          "nShowers", EventData::MAX_SHOWERS, "F");
     }
 }

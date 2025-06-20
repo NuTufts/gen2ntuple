@@ -110,13 +110,14 @@ bool VertexSelector::processEvent(larlite::storage_manager* larlite_io,
     }
     
     // Calculate vertex quality metrics
-    if (!calculateVertexQuality(larlite_io, larcv_io, event_data)) {
+    if (!calculateVertexQuality( larlite_io, larcv_io, 
+                                 event_data, reco_data )) {
         return false;
     }
     
     // Process keypoints if enabled
     if (include_keypoints_) {
-        if (!processKeypoints(larcv_io, event_data)) {
+        if (!processKeypoints(reco_data, event_data)) {
             return false;
         }
     }
@@ -177,7 +178,9 @@ bool VertexSelector::findBestVertex(larlite::storage_manager* larlite_io,
     event_data->vtxX = selected_vtx.pos[0];
     event_data->vtxY = selected_vtx.pos[1]; 
     event_data->vtxZ = selected_vtx.pos[2];
-    event_data->vtxScore = selected_vtx.netScore;
+    event_data->vtxScore   = selected_vtx.netScore;
+    event_data->vtxKPtype  = selected_vtx.keypoint_type;
+    event_data->vtxKPscore = selected_vtx.netScore;
 
     if ( selected_index>=0 && selected_index<(int)_nuvtx_sinkhorn_div_v.size() ) {
         /// fill flash prediction variables
@@ -215,39 +218,70 @@ bool VertexSelector::extractVertexInfo(larlite::storage_manager* larlite_io,
 
 bool VertexSelector::calculateVertexQuality(larlite::storage_manager* larlite_io,
                                            larcv::IOManager* larcv_io,
-                                           EventData* event_data) {
+                                           EventData* event_data,
+                                           RecoData* reco_data ) {
     
-    // Placeholder values - in practice these would be calculated from:
-    // - Pixel analysis around vertex
-    // - Cosmic track association  
-    // - Keypoint analysis
+    int vtxIdx = event_data->vtxIndex;
+
+    if ( vtxIdx<0 )
+        return true;
+
+    auto const& nuvtx = reco_data->nuvtx_v->at(vtxIdx);
+    auto const& nusel = reco_data->nusel_v->at(vtxIdx);
     
-    event_data->vtxKPtype = 0;
-    event_data->vtxKPscore = 0.0f;
-    event_data->vtxMaxIntimePixelSum = 1000.0f;
-    event_data->vtxFracHitsOnCosmic = 0.1f;
+    event_data->vtxFracHitsOnCosmic = nusel.frac_allhits_on_cosmic;
     
-    // Pixel fractions (placeholder)
-    for (int i = 0; i < 3; i++) {
-        event_data->fracUnrecoIntimePixels[i] = 0.05f;
-        event_data->fracRecoOuttimePixels[i] = 0.02f;
+    if ( nusel.unreco_fraction_v.size()>=3 ) {
+        for (int i = 0; i < 3; i++) {
+            event_data->fracUnrecoIntimePixels[i] = nusel.unreco_fraction_v.at(i);
+        }
+    }
+
+    if ( nusel.unreco_fraction_v.size()>=6 ) {
+        for (int i=0; i<3; i++) {
+            event_data->fracRecoOuttimePixels[i]  = nusel.unreco_fraction_v.at(3+i);
+        }
     }
     
     return true;
 }
 
-bool VertexSelector::processKeypoints(larcv::IOManager* larcv_io, EventData* event_data) {
+bool VertexSelector::processKeypoints(RecoData* reco_data, 
+                                      EventData* event_data) 
+{     
+    if ( reco_data->kpc_nu_v==nullptr ) {
+        return true;
+    }
+
+    event_data->nKeypoints = 0;
+
+    int iKP=0;
+
+    std::vector< std::vector< larflow::reco::KPCluster >* > kpcontainers;
+    kpcontainers.push_back( reco_data->kpc_nu_v );
+    kpcontainers.push_back( reco_data->kpc_track_v );
+    kpcontainers.push_back( reco_data->kpc_shower_v );
+    kpcontainers.push_back( reco_data->kpc_cosmic_v );
     
-    // Get keypoint data from LArCV
-    // This is a simplified version - the full implementation would process
-    // the keypoint pixel clusters and extract features
-    
-    event_data->nKeypoints = 0; // Placeholder
-    
-    // In practice, would iterate through keypoint clusters:
-    // - Extract cluster properties
-    // - Calculate scores and positions
-    // - Fill arrays up to MAX_KEYPOINTS
+    for ( auto&  pkp_v : kpcontainers ) {
+
+        if ( iKP>= EventData::MAX_KEYPOINTS )
+            break;
+
+        for (auto const& kpc : *pkp_v ) {
+            if ( iKP>=EventData::MAX_KEYPOINTS )
+                break;
+
+            event_data->kpClusterType[iKP] = kpc._cluster_type;
+            event_data->kpFilterType[iKP]  = 0;
+            event_data->kpMaxScore[iKP]    = kpc.max_score;
+            event_data->kpMaxPosX[iKP]     = kpc.max_pt_v[0];
+            event_data->kpMaxPosY[iKP]     = kpc.max_pt_v[1];
+            event_data->kpMaxPosZ[iKP]     = kpc.max_pt_v[2];
+            iKP++;
+        }
+    }
+    event_data->nKeypoints = iKP;
     
     return true;
 }

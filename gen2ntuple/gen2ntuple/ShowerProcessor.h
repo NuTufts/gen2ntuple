@@ -30,6 +30,10 @@ namespace model {
 }
 }
 
+#include "larpid/data/CropPixData_t.h"
+#include "ublarcvapp/MCTools/MCPixelPGraph.h"
+#include "ublarcvapp/MCTools/MCPixelPMap.h"
+
 namespace gen2ntuple {
 
 class ShowerProcessor {
@@ -46,6 +50,13 @@ public:
     void setLArPIDInterface(larpid::model::TorchModel* larpid_model) {
         larpid_cnn_ = larpid_model;
     }
+
+    void setMCPixelUtils( ublarcvapp::mctools::MCPixelPGraph* mcpg,
+                          ublarcvapp::mctools::MCPixelPMap* mcpm )
+    {
+        _mcpg = mcpg;
+        _mcpm = mcpm;
+    }
     
     // Main processing method
     bool processEvent(larlite::storage_manager* larlite_io,
@@ -57,7 +68,9 @@ private:
     bool is_mc_;
     float vertex_x_, vertex_y_, vertex_z_;
     larpid::model::TorchModel* larpid_cnn_;  // Non-owning pointer
-    
+    ublarcvapp::mctools::MCPixelPGraph* _mcpg;
+    ublarcvapp::mctools::MCPixelPMap*   _mcpm;
+
     // Shower processing methods
     bool extractShowerInfo(larlite::storage_manager* larlite_io,
                           larcv::IOManager* larcv_io,
@@ -81,9 +94,9 @@ private:
     bool calculateShowerEnergy(const larflow::reco::NuVertexCandidate& nuvtx, int shower_idx,
                               EventData* event_data);
     
-    // Truth matching (MC only)
-    bool performTruthMatching(larlite::storage_manager* larlite_io,
-                             int shower_idx, EventData* event_data);
+    bool getMCProngParticles( larcv::IOManager* larcv_io,
+            std::vector< std::vector<larpid::data::CropPixData_t> >& prong_vv,
+            EventData* event_data, int shower_idx );
     
     // Geometric calculations
     float calculateDistanceToVertex(const larlite::track& shower_trunk) const;

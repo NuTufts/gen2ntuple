@@ -176,12 +176,18 @@ void EventData::clear() {
     trackRecoE.fill(-999.0);
     
     // Truth matching
-    trackTruePDG.fill(0);
+    trackTruePID.fill(0);
     trackTrueTID.fill(-1);
     trackTrueMID.fill(-1);
     trackTrueE.fill(-999.0);
     trackTrueComp.fill(-999.0);
     trackTruePurity.fill(-999.0);
+
+    trackTrueElPurity.fill(0.);
+    trackTruePhPurity.fill(0.);
+    trackTrueMuPurity.fill(0.);
+    trackTruePiPurity.fill(0.);
+    trackTruePrPurity.fill(0.);
     
     // Shower Information
     nShowers = 0;
@@ -233,12 +239,18 @@ void EventData::clear() {
     showerRecoEY.fill(-999.0);
     
     // Truth matching
-    showerTruePDG.fill(0);
+    showerTruePID.fill(0);
     showerTrueTID.fill(-1);
     showerTrueMID.fill(-1);
     showerTrueE.fill(-999.0);
     showerTrueComp.fill(-999.0);
     showerTruePurity.fill(-999.0);
+
+    showerTrueElPurity.fill(0.);
+    showerTruePhPurity.fill(0.);
+    showerTrueMuPurity.fill(0.);
+    showerTruePiPurity.fill(0.);
+    showerTruePrPurity.fill(0.);
     
     // Event-level Features
     recoNuE = -999.0;

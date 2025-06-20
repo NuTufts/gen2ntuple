@@ -63,7 +63,8 @@ private:
     
     bool calculateVertexQuality(larlite::storage_manager* larlite_io,
                                larcv::IOManager* larcv_io,
-                               EventData* event_data);
+                               EventData* event_data,
+                               RecoData* reco_data );
 
     int calculateFlashPredictions( larlite::storage_manager* larlite_io,
                                    larcv::IOManager* larcv_io,
@@ -71,7 +72,7 @@ private:
                                    RecoData* reco_data);
 
     // Keypoint processing
-    bool processKeypoints(larcv::IOManager* larcv_io, EventData* event_data);
+    bool processKeypoints(RecoData* reco_data, EventData* event_data);
     
     // Geometric calculations
     bool checkFiducialVolume(float x, float y, float z) const;

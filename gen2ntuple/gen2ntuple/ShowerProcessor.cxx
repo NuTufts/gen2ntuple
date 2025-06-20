@@ -148,18 +148,6 @@ bool ShowerProcessor::extractShowerInfo(larlite::storage_manager* larlite_io,
         // Number of hits
         event_data->showerNHits[i] = (int)showercluster.size();
         
-        // Truth matching for MC
-        if (is_mc_) {
-            if (!performTruthMatching(larlite_io, i, event_data)) {
-                // Set default truth values
-                event_data->showerTruePDG[i] = 0;
-                event_data->showerTrueTID[i] = -1;
-                event_data->showerTrueMID[i] = -1;
-                event_data->showerTrueE[i] = -1.0f;
-                event_data->showerTrueComp[i] = 0.0f;
-                event_data->showerTruePurity[i] = 0.0f;
-            }
-        }
     }
     
     return true;
@@ -225,7 +213,7 @@ bool ShowerProcessor::calculateShowerCharge(larcv::IOManager* larcv_io,
 
     float clusterCharge = 0.0f;
     float threshold = 10.0f; // ADC threshold
-
+    std::set< std::array<int,3> > pixels_visited; // prevent double counting pixels
     for (auto const& hit : cluster) {
         for (int p = 0; p < 3; ++p) {
             auto const& img = image2Dvec.at(p);
@@ -234,9 +222,16 @@ bool ShowerProcessor::calculateShowerCharge(larcv::IOManager* larcv_io,
             
             if (row >= 0 && row < (int)img.meta().rows() &&
                 col >= 0 && col < (int)img.meta().cols()) {
+
                 float pixVal = img.pixel(row, col);
                 if (pixVal >= threshold) {
-                    clusterCharge += pixVal;
+                    std::array<int,3> pixindex = {p,row,col};
+
+                    if ( pixels_visited.find(pixindex)==pixels_visited.end()) {
+                        // not in set
+                        clusterCharge += pixVal;
+                        pixels_visited.insert( pixindex );
+                    }
                 }
             }
         }
@@ -343,6 +338,11 @@ bool ShowerProcessor::runLArPID(larcv::IOManager* larcv_io,
                 throw std::runtime_error(errmsg.str());
             }
         }
+
+        if ( is_mc_ ) {
+            // get prong larpid groundtruth
+            getMCProngParticles(larcv_io, larpid_input, event_data, shower_idx );
+        }
         
         if (success) {
             // Assign scores
@@ -362,8 +362,8 @@ bool ShowerProcessor::runLArPID(larcv::IOManager* larcv_io,
             // Process type scores
             event_data->showerProcess[shower_idx] = output.predictedProcess;
             event_data->showerPrimaryScore[shower_idx] = output.processScores[0];
-            event_data->showerFromChargedScore[shower_idx] = output.processScores[1];
-            event_data->showerFromNeutralScore[shower_idx] = output.processScores[2];
+            event_data->showerFromChargedScore[shower_idx] = output.processScores[2];
+            event_data->showerFromNeutralScore[shower_idx] = output.processScores[1];
 
             // Mark as classified
             event_data->showerClassified[shower_idx] = 1;
@@ -478,56 +478,6 @@ int ShowerProcessor::getPIDFromScores(float el_score, float ph_score,
     }
     
     return pid;
-}
-
-bool ShowerProcessor::performTruthMatching(larlite::storage_manager* larlite_io,
-                                          int shower_idx, EventData* event_data) {
-    
-    // This is a simplified version - the full implementation would use
-    // sophisticated pixel-level truth matching from the Python code
-    
-    // Get MC shower information
-    auto ev_mcshower = larlite_io->get_data<larlite::event_mcshower>("mcreco");
-    if (!ev_mcshower || ev_mcshower->size() == 0) {
-        return false;
-    }
-    
-    // Simple truth matching based on closest start position
-    float min_dist = 999999.0f;
-    int best_match = -1;
-    
-    auto reco_start = TVector3(event_data->showerStartPosX[shower_idx],
-                              event_data->showerStartPosY[shower_idx], 
-                              event_data->showerStartPosZ[shower_idx]);
-    
-    for (size_t i = 0; i < ev_mcshower->size(); i++) {
-        const auto& mcshower = ev_mcshower->at(i);
-        
-        auto mc_start = mcshower.Start().Position().Vect();
-        float dist = (reco_start - mc_start).Mag();
-        
-        if (dist < min_dist) {
-            min_dist = dist;
-            best_match = i;
-        }
-    }
-    
-    if (best_match >= 0 && min_dist < 5.0f) { // 5cm matching threshold
-        const auto& mcshower = ev_mcshower->at(best_match);
-        
-        event_data->showerTruePDG[shower_idx] = mcshower.PdgCode();
-        event_data->showerTrueTID[shower_idx] = mcshower.TrackID();
-        event_data->showerTrueMID[shower_idx] = mcshower.MotherTrackID();
-        event_data->showerTrueE[shower_idx] = mcshower.Start().E() * 1000.0f; // Convert to MeV
-        
-        // Placeholder quality metrics
-        event_data->showerTrueComp[shower_idx] = 0.7f;
-        event_data->showerTruePurity[shower_idx] = 0.7f;
-        
-        return true;
-    }
-    
-    return false;
 }
 
 float ShowerProcessor::calculateDistanceToVertex(const larlite::track& shower_trunk) const {
@@ -658,6 +608,151 @@ bool ShowerProcessor::isSecondaryShower(const larlite::track& shower_trunk, cons
     int cluster_size = cluster.size();
     
     return (dist_to_vertex > 3.0f) || (cluster_size < 10); // 3cm distance or 10 hits threshold
+}
+
+bool ShowerProcessor::getMCProngParticles( larcv::IOManager* larcv_io,
+    std::vector< std::vector<larpid::data::CropPixData_t> >& prong_vv,
+    EventData* event_data,
+    int shower_idx )
+{
+
+    struct ShowerInfo_t {
+        int pdg;
+        int nodeidx;
+        float pixI;
+        ShowerInfo_t()
+        : pdg(-1), nodeidx(-1), pixI(0.0)
+        {};
+    };  
+    float totalPixI = 0.0;
+    std::map< int, float > particleDict;
+    std::map< int, ShowerInfo_t > ShowerDict;
+
+    int nsparse_imgs = prong_vv.size();
+    //   print("[getMCProngParticle] num sparse images=",sparseimg_vv.size(),flush=True)
+    //   print("  adc_v.size()=",adc_v.size(),flush=True)
+    //   print("  pmcpg: ",mcpg,flush=True)
+    //   print("  pmcpm: ",mcpm,flush=True)
+
+    for ( int p=0; p<3; p++ ) { 
+        auto& sparseimg = prong_vv.at(p);
+        int npix = (int)sparseimg.size();
+        for (int iipix=0; iipix<npix; iipix++) {
+            auto& pix = sparseimg.at(iipix);
+            totalPixI += pix.val;
+            auto pixContents = _mcpm->getPixContent(p, pix.rawRow, pix.rawCol);   
+            for ( auto& part : pixContents.particles) {
+                int pdg = abs(part.pdg);
+                auto it_particle = particleDict.find( pdg );
+                if ( it_particle==particleDict.end() ) {
+                    particleDict[ pdg ] = 0.;
+                }
+                particleDict[ pdg ] += pix.val;    
+
+                auto it_Showerid = ShowerDict.find( part.tid );
+                if ( it_Showerid==ShowerDict.end() ) {
+                    ShowerDict[part.tid] = ShowerInfo_t();
+                    ShowerDict[part.tid].pdg = part.pdg;
+                    ShowerDict[part.tid].nodeidx = part.nodeidx;
+                }
+                ShowerDict[part.tid].pixI += pixContents.pixI;
+            }
+        }
+    }
+
+    int maxPartPDG = 0; 
+    int maxPartNID = -1;
+    int maxPartTID = -1;
+    int maxPartMID = -1;
+    float maxPartI    = 0.;
+    float maxPartComp = 0.;
+    float maxPartE    = -1.;
+    std::vector<int> pdglist;
+    std::vector<int> puritylist;
+
+    for (auto it_part=particleDict.begin(); it_part!=particleDict.end(); it_part++ ) {
+        pdglist.push_back( it_part->first );
+        float purity = 0.;
+        if ( totalPixI>0.0 ) {
+            purity = (it_part->second)/totalPixI;
+        }
+        puritylist.push_back(purity);
+    }
+
+    for ( auto it_Shower=ShowerDict.begin(); it_Shower!=ShowerDict.end(); it_Shower++ ) {
+        std::cout << "Shower[" << shower_idx << "] pdg=" << it_Shower->second.pdg << " totalpix=" << it_Shower->second.pixI << std::endl; 
+        if ( it_Shower->second.pixI > maxPartI ) {
+            maxPartI   = it_Shower->second.pixI;
+            maxPartPDG = it_Shower->second.pdg;
+            maxPartNID = it_Shower->second.nodeidx;
+            maxPartTID = it_Shower->first;
+        }
+    }
+
+    float totNodePixI = 0.;
+    auto ev_adc = (larcv::EventImage2D*)larcv_io->get_data(larcv::kProductImage2D,"wire");
+    auto& adc_v = ev_adc->as_vector();
+    if ( maxPartI>0. ) {
+        auto& maxPartNode = _mcpg->node_v.at(maxPartNID);
+
+        maxPartMID = maxPartNode.mtid;
+        maxPartE = maxPartNode.E_MeV;
+        if ( maxPartNode.tid != maxPartTID ) {
+            throw std::runtime_error( "ERROR: mismatch between node Shower id from mcpm and mcpg in getMCProngParticle" );
+        }
+        for (int p=0; p<3; p++) {
+            auto& pixels = maxPartNode.pix_vv.at(p);
+            for (int iP=0; iP<(int)pixels.size()/2; iP++ ) {
+                int row = ( pixels[2*iP]-2400 )/6;
+                int col = pixels[2*iP+1];
+                totNodePixI += adc_v[p].pixel(row,col);
+            }
+        }
+        if ( totNodePixI>0) {
+            maxPartComp = maxPartI/totNodePixI;
+        }
+        if ( maxPartComp>1.0) {
+            std::cout << "ERROR: prong completeness calculated to be >1" << std::endl;
+        }
+    }
+    float maxPartPurity = (totalPixI) ? maxPartI/totalPixI : 0.0;
+
+    event_data->showerTruePID[shower_idx]    = maxPartPDG;
+    event_data->showerTrueTID[shower_idx]    = maxPartTID;
+    event_data->showerTrueMID[shower_idx]    = maxPartMID;
+    event_data->showerTrueE[shower_idx]      = maxPartE;
+    event_data->showerTruePurity[shower_idx] = maxPartPurity;
+    event_data->showerTrueComp[shower_idx]   = maxPartComp;
+    
+    event_data->showerTrueElPurity[shower_idx] = 0.;
+    event_data->showerTruePhPurity[shower_idx] = 0.;
+    event_data->showerTrueMuPurity[shower_idx] = 0.;
+    event_data->showerTruePiPurity[shower_idx] = 0.;
+    event_data->showerTruePrPurity[shower_idx] = 0.;
+
+    int ii=0;
+    for ( auto& pdg : pdglist ) {
+        switch (pdg) {
+        case 11:
+            event_data->showerTrueElPurity[shower_idx] = puritylist.at(ii);
+            break;
+        case 22:
+            event_data->showerTruePhPurity[shower_idx] = puritylist.at(ii);
+            break;
+        case 13:
+            event_data->showerTrueMuPurity[shower_idx] = puritylist.at(ii);
+            break;
+        case 211:
+            event_data->showerTruePiPurity[shower_idx] = puritylist.at(ii);
+            break;
+        case 2212:
+            event_data->showerTruePrPurity[shower_idx] = puritylist.at(ii);
+            break;         
+        }
+    }
+
+    return true;
+
 }
 
 } // namespace gen2ntuple

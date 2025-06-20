@@ -30,6 +30,7 @@ set(GEN2NTUPLE_SOURCES
   VertexSelector.cxx
   TrackProcessor.cxx
   ShowerProcessor.cxx
+  VertexSummaryProcessor.cxx
   PCAAnalyzer.cxx
   GeometryUtils.cxx
   ChargeCalculator.cxx
@@ -45,6 +46,8 @@ set(GEN2NTUPLE_SOURCES
   WCFiducial.cxx
   Configuration.cxx
   Logger.cxx
+  pionRange2T.cxx
+
 )
 
 set(GEN2NTUPLE_HEADERS
@@ -60,6 +63,7 @@ set(GEN2NTUPLE_HEADERS
   VertexSelector.h
   TrackProcessor.h
   ShowerProcessor.h
+  VertexSummaryProcessor.h
   PCAAnalyzer.h
   GeometryUtils.h
   ChargeCalculator.h
@@ -75,6 +79,8 @@ set(GEN2NTUPLE_HEADERS
   WCFiducial.h
   Configuration.h
   Logger.h
+  pionRange2T.h
+
 )
 
 # Create the library

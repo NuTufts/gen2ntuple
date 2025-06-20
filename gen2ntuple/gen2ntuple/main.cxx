@@ -7,12 +7,15 @@
 #include "VertexSelector.h"
 #include "TrackProcessor.h"
 #include "ShowerProcessor.h"
+#include "VertexSummaryProcessor.h"
 
 #include "TFile.h"
 #include "TTree.h"
 #include <iostream>
 #include <memory>
 
+#include "ublarcvapp/MCTools/MCPixelPGraph.h"
+#include "ublarcvapp/MCTools/MCPixelPMap.h"
 #include "larpid/model/TorchModel.h"
 
 using namespace gen2ntuple;
@@ -104,8 +107,11 @@ int main(int argc, char** argv) {
         std::cerr << e.what() << std::endl;
     }
 
+    ublarcvapp::mctools::MCPixelPGraph mcpg;
+    ublarcvapp::mctools::MCPixelPMap   mcpm;
+
     LOG_INFO("Setup ProngCNN");
-    bool larpid_debug = true;
+    bool larpid_debug = false;
     larpid::model::TorchModel larpid_model;
     larpid_model.Initialize( config.getModelPath(), larpid_debug );
 
@@ -124,10 +130,15 @@ int main(int argc, char** argv) {
     TrackProcessor track_processor;
     track_processor.setMCMode(config.isMC());
     track_processor.setProngCNNInterface( &larpid_model );
+    track_processor.setMCPixelUtils( &mcpg, &mcpm );
     
     ShowerProcessor shower_processor;
     shower_processor.setMCMode(config.isMC());
     shower_processor.setLArPIDInterface( &larpid_model );
+    shower_processor.setMCPixelUtils( &mcpg, &mcpm );
+
+    VertexSummaryProcessor summary_processor;
+
     
     LOG_INFO("Processing modules initialized");
     
@@ -161,6 +172,11 @@ int main(int argc, char** argv) {
         event_data.run = event_id.run;
         event_data.subrun = event_id.subrun;
         event_data.event = event_id.event;
+
+        mcpg.clear();
+        mcpm.pixMap.clear();
+        mcpg.buildgraph(*file_manager.getLarcvIO(), *file_manager.getLarliteIO());
+        mcpm.buildmap( *file_manager.getLarcvIO(), mcpg );
         
         // Process MC truth if MC
         if (config.isMC() && mc_processor) {
@@ -202,6 +218,12 @@ int main(int argc, char** argv) {
             LOG_WARNING("Shower processing failed for event " + 
                        std::to_string(event_data.event));
             // Continue processing even if shower processing fails
+        }
+
+        // Calculate fractions now that we've calculated values for each track
+        // and can build totals
+        if (!summary_processor.calculateHitAndChargeFractions(&event_data)) {
+            std::cerr << "Error calculating track hit and charge fractions" << std::endl;
         }
         
         // Calculate total reconstructed energy

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <array>
+#include <set>
 
 // LArLite includes
 #include "larlite/DataFormat/storage_manager.h"
@@ -25,6 +27,7 @@
 
 // Gen2Ntuple includes
 #include "WCFiducial.h"
+#include "pionRange2T.h"
 
 namespace gen2ntuple {
 
@@ -123,7 +126,7 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
         event_data->trackNGoodPlanes[i] = num_good_planes; 
         
         // Update energy based on PID classification
-        updateEnergyBasedOnPID(track, i, event_data);
+        updateEnergyBasedOnPID(vtxIdx, i, event_data, reco_data);
         
         // Secondary track info
         if (i < (int)nuvtx.track_isSecondary_v.size()) {
@@ -131,23 +134,9 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
         } else {
             event_data->trackIsSecondary[i] = -1;
         }
-        
-        // Calculate charge fractions
-        calculateChargeFractions(larcv_io, i, event_data, reco_data);
-        
-        // Truth matching for MC
-        if (is_mc_) {
-            if (!performTruthMatching(larlite_io, i, event_data)) {
-                // Set default truth values
-                event_data->trackTruePDG[i] = 0;
-                event_data->trackTrueTID[i] = -1;
-                event_data->trackTrueMID[i] = -1;
-                event_data->trackTrueE[i] = -1.0f;
-                event_data->trackTrueComp[i] = 0.0f;
-                event_data->trackTruePurity[i] = 0.0f;
-            }
-        }
-    }
+               
+    }//end of track loop
+
     
     return true;
 }
@@ -216,12 +205,14 @@ bool TrackProcessor::calculateTrackAngles(const larlite::track& track,
                                          int track_idx,
                                          EventData* event_data) {
     
+    auto direction = getTrackDirection(track);
+
     // Calculate cosine of angle with beam direction (z-axis)
-    event_data->trackCosTheta[track_idx] = calculateCosTheta(track);
+    event_data->trackCosTheta[track_idx] = direction[2];
     
     // Calculate cosine of angle with gravity direction (negative y-axis)
-    event_data->trackCosThetaY[track_idx] = calculateCosThetaY(track);
-    
+    event_data->trackCosThetaY[track_idx] = -direction[1];
+
     return true;
 }
 
@@ -239,58 +230,6 @@ bool TrackProcessor::calculateTrackEnergy(const larlite::track& track, int track
     event_data->trackRecoE[track_idx] = event_data->trackMuonE[track_idx];
     
     return true;
-}
-
-bool TrackProcessor::performTruthMatching(larlite::storage_manager* larlite_io,
-                                         int track_idx, EventData* event_data) {
-    
-    // This is a simplified version - the full implementation would use
-    // sophisticated pixel-level truth matching from the Python code
-    
-    // Get MC track information
-    auto ev_mctrack = larlite_io->get_data<larlite::event_mctrack>("mcreco");
-    if (!ev_mctrack || ev_mctrack->size() == 0) {
-        return false;
-    }
-    
-    // Simple truth matching based on closest start position
-    // (In practice, would use more sophisticated matching)
-    float min_dist = 999999.0f;
-    int best_match = -1;
-    
-    auto reco_start = TVector3(event_data->trackStartPosX[track_idx],
-                              event_data->trackStartPosY[track_idx], 
-                              event_data->trackStartPosZ[track_idx]);
-    
-    for (size_t i = 0; i < ev_mctrack->size(); i++) {
-        const auto& mctrack = ev_mctrack->at(i);
-        if (mctrack.size() == 0) continue;
-        
-        auto mc_start = mctrack.at(0).Position().Vect();
-        float dist = (reco_start - mc_start).Mag();
-        
-        if (dist < min_dist) {
-            min_dist = dist;
-            best_match = i;
-        }
-    }
-    
-    if (best_match >= 0 && min_dist < 5.0f) { // 5cm matching threshold
-        const auto& mctrack = ev_mctrack->at(best_match);
-        
-        event_data->trackTruePDG[track_idx] = mctrack.PdgCode();
-        event_data->trackTrueTID[track_idx] = mctrack.TrackID();
-        event_data->trackTrueMID[track_idx] = mctrack.MotherTrackID();
-        event_data->trackTrueE[track_idx] = mctrack.at(0).E() * 1000.0f; // Convert to MeV
-        
-        // Placeholder quality metrics
-        event_data->trackTrueComp[track_idx] = 0.8f;
-        event_data->trackTruePurity[track_idx] = 0.8f;
-        
-        return true;
-    }
-    
-    return false;
 }
 
 float TrackProcessor::calculateTrackLength(const larlite::track& track) const {
@@ -311,30 +250,27 @@ float TrackProcessor::calculateDistanceToVertex(const larlite::track& track) con
     return std::sqrt(dx*dx + dy*dy + dz*dz);
 }
 
-float TrackProcessor::calculateCosTheta(const larlite::track& track) const {
-    auto direction = track.VertexDirection();
-    
-    // Dot product with beam direction (0, 0, 1)
-    float cos_theta = direction.Z() / direction.Mag();
-    
-    return cos_theta;
-}
-
-float TrackProcessor::calculateCosThetaY(const larlite::track& track) const {
-    auto direction = track.VertexDirection();
-    
-    // Dot product with gravity direction (0, -1, 0)
-    float cos_theta_y = -direction.Y() / direction.Mag();
-    
-    return cos_theta_y;
-}
 
 std::vector<float> TrackProcessor::getTrackDirection(const larlite::track& track) const {
-    auto direction = track.VertexDirection();
-    
-    return {static_cast<float>(direction.X()), 
-            static_cast<float>(direction.Y()), 
-            static_cast<float>(direction.Z())};
+    // we follow mmr ntuple maker and use point 5 away from start
+
+    auto trackDirPt1 = track.Vertex();
+    TVector3 trackDirPt2 = track.Vertex();
+    for (int ipt = 1; ipt < (int)track.NumberTrajectoryPoints(); ipt++) {
+        trackDirPt2 = track.LocationAtPoint(ipt);
+        double dist = (trackDirPt2 - trackDirPt1).Mag();
+        if (dist > 5.0) {
+            break;
+        }
+    }
+    auto trackDir = trackDirPt2 - trackDirPt1;
+    if (trackDir.Mag() > 0.0) {
+        trackDir *= (1.0 / trackDir.Mag());
+    }
+   
+    return {static_cast<float>(trackDir.X()), 
+            static_cast<float>(trackDir.Y()), 
+            static_cast<float>(trackDir.Z())};
 }
 
 float TrackProcessor::calculateMuonEnergy(const larlite::track& track) const {
@@ -395,6 +331,7 @@ bool TrackProcessor::calculateTrackCharge(larcv::IOManager* larcv_io,
     float clusterCharge = 0.0f;
     float threshold = 10.0f; // ADC threshold
 
+    std::set< std::array<int,3> > pixels_visited; // prevent double counting pixels
     for (auto const& hit : cluster) {
         for (int p = 0; p < 3; ++p) {
             auto const& img = image2Dvec.at(p);
@@ -405,7 +342,13 @@ bool TrackProcessor::calculateTrackCharge(larcv::IOManager* larcv_io,
                 col >= 0 && col < (int)img.meta().cols()) {
                 float pixVal = img.pixel(row, col);
                 if (pixVal >= threshold) {
-                    clusterCharge += pixVal;
+
+                    std::array<int,3> pixindex = {p,row,col};
+                    if ( pixels_visited.find(pixindex)==pixels_visited.end()) {
+                        // not in set
+                        clusterCharge += pixVal;
+                        pixels_visited.insert( pixindex );
+                    }
                 }
             }
         }
@@ -503,6 +446,11 @@ bool TrackProcessor::runProngCNN(larcv::IOManager* larcv_io,
             }
         }
         
+        if ( is_mc_ ) {
+            // get prong larpid groundtruth
+            getMCProngParticles(larcv_io, larpid_input, event_data, track_idx );
+        }
+
         if (success) {
             // Assign scores
             event_data->trackElScore[track_idx] = output.classScores[0];
@@ -565,57 +513,37 @@ void TrackProcessor::setDefaultPIDScores(int track_idx, EventData* event_data) {
     event_data->trackClassified[track_idx] = 0;
 }
 
-void TrackProcessor::updateEnergyBasedOnPID(const larlite::track& track,
-                                           int track_idx,
-                                           EventData* event_data) {
+bool TrackProcessor::updateEnergyBasedOnPID(int vtxIdx, int track_idx,
+                                           EventData* event_data,
+                                           RecoData* reco_data ) {
     
-    int pid = event_data->trackPID[track_idx];
-    float track_length = event_data->trackLength[track_idx];
-    
-    switch (pid) {
-        case PID_MUON:
-            event_data->trackRecoE[track_idx] = event_data->trackMuonE[track_idx];
-            break;
-        case PID_PROTON:
-            event_data->trackRecoE[track_idx] = event_data->trackProtonE[track_idx];
-            break;
-        case PID_PION:
-            event_data->trackRecoE[track_idx] = calculatePionRangeEnergy(track_length);
-            break;
-        case PID_ELECTRON:
-        case PID_PHOTON:
-            // For EM showers, use track length as proxy (very rough)
-            event_data->trackRecoE[track_idx] = track_length * 2.4f; // MeV/cm
-            break;
-        default:
-            // Default to muon hypothesis
-            event_data->trackRecoE[track_idx] = event_data->trackMuonE[track_idx];
-    }
-}
+    auto const& nuvtx = reco_data->nuvtx_v->at(vtxIdx);
+    auto const& track = nuvtx.track_v.at(track_idx);
 
-void TrackProcessor::calculateChargeFractions(larcv::IOManager* larcv_io,
-                                            int track_idx,
-                                            EventData* event_data,
-                                            RecoData* reco_data) {
-    
-    // Get total charge in the event
-    float total_charge = 0.0f;
-    for (int i = 0; i < event_data->nTracks; i++) {
-        if (event_data->trackCharge[i] > 0) {
-            total_charge += event_data->trackCharge[i];
-        }
+    if ( event_data->trackPID[track_idx]<=0 ) {
+        event_data->trackRecoE[track_idx] = -1.0;
+        return true;
     }
+
+    bool foundEnergy = true;
+    if ( event_data->trackMuScore[track_idx] >= event_data->trackPiScore[track_idx] 
+         && event_data->trackMuScore[track_idx] >= event_data->trackPrScore[track_idx] ) {
     
-    // Calculate charge fraction
-    if (total_charge > 0) {
-        event_data->trackChargeFrac[track_idx] = 
-            event_data->trackCharge[track_idx] / total_charge;
-    } else {
-        event_data->trackChargeFrac[track_idx] = 0.0f;
+        event_data->trackRecoE[track_idx] = nuvtx.track_kemu_v[track_idx];
     }
-    
-    // Hit fraction (simplified - would need total hits in event)
-    event_data->trackHitFrac[track_idx] = 0.1f; // Placeholder
+    else if (event_data->trackPrScore[track_idx] >= event_data->trackMuScore[track_idx]
+         && event_data->trackPrScore[track_idx] >= event_data->trackPiScore[track_idx] ) {
+      
+        event_data->trackRecoE[track_idx] = nuvtx.track_keproton_v[track_idx];
+
+    }
+    else {
+        event_data->trackRecoE[track_idx] 
+            = pionRange2T::get()->Eval(track.Length());
+    }  
+
+    return true;
+
 }
 
 int TrackProcessor::getPIDFromScores(float el_score, float ph_score, 
@@ -645,5 +573,151 @@ int TrackProcessor::getPIDFromScores(float el_score, float ph_score,
     
     return pid;
 }
+
+bool TrackProcessor::getMCProngParticles( larcv::IOManager* larcv_io,
+    std::vector< std::vector<larpid::data::CropPixData_t> >& prong_vv,
+    EventData* event_data,
+    int track_idx )
+{
+
+    struct TrackInfo_t {
+        int pdg;
+        int nodeidx;
+        float pixI;
+        TrackInfo_t()
+        : pdg(-1), nodeidx(-1), pixI(0.0)
+        {};
+    };  
+    float totalPixI = 0.0;
+    std::map< int, float > particleDict;
+    std::map< int, TrackInfo_t > trackDict;
+
+    int nsparse_imgs = prong_vv.size();
+    //   print("[getMCProngParticle] num sparse images=",sparseimg_vv.size(),flush=True)
+    //   print("  adc_v.size()=",adc_v.size(),flush=True)
+    //   print("  pmcpg: ",mcpg,flush=True)
+    //   print("  pmcpm: ",mcpm,flush=True)
+
+    for ( int p=0; p<3; p++ ) { 
+        auto& sparseimg = prong_vv.at(p);
+        int npix = (int)sparseimg.size();
+        for (int iipix=0; iipix<npix; iipix++) {
+            auto& pix = sparseimg.at(iipix);
+            totalPixI += pix.val;
+            auto pixContents = _mcpm->getPixContent(p, pix.rawRow, pix.rawCol);   
+            for ( auto& part : pixContents.particles) {
+                int pdg = abs(part.pdg);
+                auto it_particle = particleDict.find( pdg );
+                if ( it_particle==particleDict.end() ) {
+                    particleDict[ pdg ] = 0.;
+                }
+                particleDict[ pdg ] += pix.val;    
+
+                auto it_trackid = trackDict.find( part.tid );
+                if ( it_trackid==trackDict.end() ) {
+                    trackDict[part.tid] = TrackInfo_t();
+                    trackDict[part.tid].pdg = part.pdg;
+                    trackDict[part.tid].nodeidx = part.nodeidx;
+                }
+                trackDict[part.tid].pixI += pixContents.pixI;
+            }
+        }
+    }
+
+    int maxPartPDG = 0; 
+    int maxPartNID = -1;
+    int maxPartTID = -1;
+    int maxPartMID = -1;
+    float maxPartI    = 0.;
+    float maxPartComp = 0.;
+    float maxPartE    = -1.;
+    std::vector<int> pdglist;
+    std::vector<int> puritylist;
+
+    for (auto it_part=particleDict.begin(); it_part!=particleDict.end(); it_part++ ) {
+        pdglist.push_back( it_part->first );
+        float purity = 0.;
+        if ( totalPixI>0.0 ) {
+            purity = (it_part->second)/totalPixI;
+        }
+        puritylist.push_back(purity);
+    }
+
+    for ( auto it_track=trackDict.begin(); it_track!=trackDict.end(); it_track++ ) {
+        std::cout << "track[" << track_idx << "] pdg=" << it_track->second.pdg << " totalpix=" << it_track->second.pixI << std::endl; 
+        if ( it_track->second.pixI > maxPartI ) {
+            maxPartI   = it_track->second.pixI;
+            maxPartPDG = it_track->second.pdg;
+            maxPartNID = it_track->second.nodeidx;
+            maxPartTID = it_track->first;
+        }
+    }
+
+    float totNodePixI = 0.;
+    auto ev_adc = (larcv::EventImage2D*)larcv_io->get_data(larcv::kProductImage2D,"wire");
+    auto& adc_v = ev_adc->as_vector();
+    if ( maxPartI>0. ) {
+        auto& maxPartNode = _mcpg->node_v.at(maxPartNID);
+
+        maxPartMID = maxPartNode.mtid;
+        maxPartE = maxPartNode.E_MeV;
+        if ( maxPartNode.tid != maxPartTID ) {
+            throw std::runtime_error( "ERROR: mismatch between node track id from mcpm and mcpg in getMCProngParticle" );
+        }
+        for (int p=0; p<3; p++) {
+            auto& pixels = maxPartNode.pix_vv.at(p);
+            for (int iP=0; iP<(int)pixels.size()/2; iP++ ) {
+                int row = ( pixels[2*iP]-2400 )/6;
+                int col = pixels[2*iP+1];
+                totNodePixI += adc_v[p].pixel(row,col);
+            }
+        }
+        if ( totNodePixI>0) {
+            maxPartComp = maxPartI/totNodePixI;
+        }
+        if ( maxPartComp>1.0) {
+            std::cout << "ERROR: prong completeness calculated to be >1" << std::endl;
+        }
+    }
+    float maxPartPurity = (totalPixI) ? maxPartI/totalPixI : 0.0;
+
+    event_data->trackTruePID[track_idx]    = maxPartPDG;
+    event_data->trackTrueTID[track_idx]    = maxPartTID;
+    event_data->trackTrueMID[track_idx]    = maxPartMID;
+    event_data->trackTrueE[track_idx]      = maxPartE;
+    event_data->trackTruePurity[track_idx] = maxPartPurity;
+    event_data->trackTrueComp[track_idx]   = maxPartComp;
+    
+    event_data->trackTrueElPurity[track_idx] = 0.;
+    event_data->trackTruePhPurity[track_idx] = 0.;
+    event_data->trackTrueMuPurity[track_idx] = 0.;
+    event_data->trackTruePiPurity[track_idx] = 0.;
+    event_data->trackTruePrPurity[track_idx] = 0.;
+
+    int ii=0;
+    for ( auto& pdg : pdglist ) {
+        switch (pdg) {
+        case 11:
+            event_data->trackTrueElPurity[track_idx] = puritylist.at(ii);
+            break;
+        case 22:
+            event_data->trackTruePhPurity[track_idx] = puritylist.at(ii);
+            break;
+        case 13:
+            event_data->trackTrueMuPurity[track_idx] = puritylist.at(ii);
+            break;
+        case 211:
+            event_data->trackTruePiPurity[track_idx] = puritylist.at(ii);
+            break;
+        case 2212:
+            event_data->trackTruePrPurity[track_idx] = puritylist.at(ii);
+            break;         
+        }
+    }
+
+    return true;
+
+}
+
 
 } // namespace gen2ntuple

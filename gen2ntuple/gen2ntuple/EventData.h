@@ -141,7 +141,7 @@ struct EventData {
     // ===============================
     // Keypoint Information (optional)
     // ===============================
-    static constexpr int MAX_KEYPOINTS = 100;
+    static constexpr int MAX_KEYPOINTS = 126;
     int nKeypoints;
     std::array<int, MAX_KEYPOINTS> kpClusterType;
     std::array<int, MAX_KEYPOINTS> kpFilterType;
@@ -212,12 +212,18 @@ struct EventData {
     
     
     // Truth matching (MC only)
-    std::array<int, MAX_TRACKS>   trackTruePDG;
+    std::array<int, MAX_TRACKS>   trackTruePID;
     std::array<int, MAX_TRACKS>   trackTrueTID;
     std::array<int, MAX_TRACKS>   trackTrueMID;
     std::array<float, MAX_TRACKS> trackTrueE;
     std::array<float, MAX_TRACKS> trackTrueComp;
     std::array<float, MAX_TRACKS> trackTruePurity;
+
+    std::array<float, MAX_TRACKS> trackTrueElPurity;
+    std::array<float, MAX_TRACKS> trackTruePhPurity;
+    std::array<float, MAX_TRACKS> trackTrueMuPurity;
+    std::array<float, MAX_TRACKS> trackTruePiPurity;
+    std::array<float, MAX_TRACKS> trackTruePrPurity;
     
     // ===============================
     // Shower Information  
@@ -227,8 +233,8 @@ struct EventData {
     
     // Basic info
     std::array<bool, MAX_SHOWERS> showerIsSecondary;
-    std::array<int, MAX_SHOWERS> showerNHits;
-    std::array<int, MAX_SHOWERS> showerIsContainedInFV;
+    std::array<int,  MAX_SHOWERS> showerNHits;
+    std::array<int,  MAX_SHOWERS> showerIsContainedInFV;
     
     // Charge info
     std::array<float, MAX_SHOWERS> showerCharge;
@@ -279,12 +285,18 @@ struct EventData {
     std::array<float, MAX_SHOWERS> showerOpeningAngle;
     
     // Truth matching (MC only)
-    std::array<int, MAX_SHOWERS> showerTruePDG;
-    std::array<int, MAX_SHOWERS> showerTrueTID;
-    std::array<int, MAX_SHOWERS> showerTrueMID;
+    std::array<int,   MAX_SHOWERS> showerTruePID;
+    std::array<int,   MAX_SHOWERS> showerTrueTID;
+    std::array<int,   MAX_SHOWERS> showerTrueMID;
     std::array<float, MAX_SHOWERS> showerTrueE;
     std::array<float, MAX_SHOWERS> showerTrueComp;
     std::array<float, MAX_SHOWERS> showerTruePurity;
+
+    std::array<float, MAX_SHOWERS> showerTrueElPurity;
+    std::array<float, MAX_SHOWERS> showerTruePhPurity;
+    std::array<float, MAX_SHOWERS> showerTrueMuPurity;
+    std::array<float, MAX_SHOWERS> showerTruePiPurity;
+    std::array<float, MAX_SHOWERS> showerTruePrPurity;
     
     // ===============================
     // Event-level Features
