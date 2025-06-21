@@ -225,6 +225,10 @@ int main(int argc, char** argv) {
         if (!summary_processor.calculateHitAndChargeFractions(&event_data)) {
             std::cerr << "Error calculating track hit and charge fractions" << std::endl;
         }
+
+        if (!summary_processor.calculateEventPCA(&event_data,&reco_data)) {
+            std::cerr << "Error calculating Event PCA quantities" << std::endl;
+        }
         
         // Calculate total reconstructed energy
         event_data.recoNuE = 0.0;

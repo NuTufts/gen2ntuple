@@ -1,5 +1,9 @@
 #include "VertexSummaryProcessor.h"
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
 #include "larflow/RecoUtils/cluster_t.h"
 #include "larflow/RecoUtils/cluster_functions.h"
 
@@ -125,119 +129,121 @@ bool VertexSummaryProcessor::calculateEventPCA( EventData* event_data,
       event_data->eventPCAxis2[iPCA]     = eventCluster.pca_axis_v[2][iPCA];
       event_data->eventPCEigenVals[iPCA] = eventCluster.pca_eigenvalues[iPCA];
     }
-//       #project event 3D points to first PC axis with 0 at vertex projection
-//       vtxProj = [0.,0.,0.]
-//       ldist = 0.
-//       for c in range(3):
-//         ldist += (vertex.pos[c] - eventCluster.pca_center[c])*eventPCAxis0[c]
-//       for c in range(3):
-//         vtxProj[c] = eventCluster.pca_center[c] + ldist*eventPCAxis0[c]
+    
+    // Project event 3D points to first PC axis with 0 at vertex projection
+    std::vector<float> vtxProj(3, 0.0f);
+    float ldist = 0.0f;
+    // Calculate projection distance from vertex to PCA center along first PC axis
+    ldist += (event_data->vtxX - eventCluster.pca_center[0]) * event_data->eventPCAxis0[0];
+    ldist += (event_data->vtxY - eventCluster.pca_center[1]) * event_data->eventPCAxis0[1];
+    ldist += (event_data->vtxZ - eventCluster.pca_center[2]) * event_data->eventPCAxis0[2];
+    
+    // Calculate vertex projection point on PC axis
+    for (int c = 0; c < 3; c++) {
+        vtxProj[c] = eventCluster.pca_center[c] + ldist * event_data->eventPCAxis0[c];
+    }
+    // Collect all projection distances
+    std::vector<float> projDists;
+    projDists.reserve(total_hits);
+    float avePosPDistTimes = 0.f;
+    float aveNegPDistTimes = 0.f;
+    int   nPosPDists = 0;
+    int   nNegPDists = 0;
+    
+    // Calculate projection distances for all hits
+    for (int i = 0; i < (int)nuvtx.track_hitcluster_v.size(); i++) {
+        for (auto& hit : nuvtx.track_hitcluster_v.at(i)) {
+            std::vector<float> projPt(3, 0.0f);
+            float ldist = 0.0f;
+            for (int c = 0; c < 3; c++) {
+                ldist += (hit[c] - eventCluster.pca_center[c]) * event_data->eventPCAxis0[c];
+            }
+            if ( ldist>0 ) {
+                avePosPDistTimes += hit.tick;
+                nPosPDists++;
+            }
+            else {
+                aveNegPDistTimes += hit.tick;
+                nNegPDists += 1;
+            }
 
-//       projDists = []
-//       avgPosPDistTimes = 0
-//       avgNegPDistTimes = 0
-//       nPosPDists = 0
-//       nNegPDists = 0
-//       for hit in eventLarflowCluster:
-//         projPt = [0.,0.,0.]
-//         ldist = 0.
-//         for c in range(3):
-//           ldist += (hit[c] - eventCluster.pca_center[c])*eventPCAxis0[c]
-//         if ldist > 0.:
-//           avgPosPDistTimes += hit.tick
-//           nPosPDists += 1
-//         else:
-//           avgNegPDistTimes += hit.tick
-//           nNegPDists += 1
-//         for c in range(3):
-//           projPt[c] = eventCluster.pca_center[c] + ldist*eventPCAxis0[c]
-//         projDist = 0.
-//         for c in range(3):
-//           projDist += (projPt[c] - vtxProj[c])**2
-//         projDists.append(sqrt(projDist))
-//       projDists.sort()
+            for (int c = 0; c < 3; c++) {
+                projPt[c] = eventCluster.pca_center[c] + ldist * event_data->eventPCAxis0[c];
+            }
+            float projDist = 0.0f;
+            for (int c = 0; c < 3; c++) {
+                projDist += (projPt[c] - vtxProj[c]) * (projPt[c] - vtxProj[c]);
+            }
+            projDists.push_back(std::sqrt(projDist));
+        }
+    }
+    
+    for (int i = 0; i < (int)nuvtx.shower_v.size(); i++) {
+        for (auto& hit : nuvtx.shower_v.at(i)) {
+            std::vector<float> projPt(3, 0.0f);
+            float ldist = 0.0f;
+            for (int c = 0; c < 3; c++) {
+                ldist += (hit[c] - eventCluster.pca_center[c]) * event_data->eventPCAxis0[c];
+            }
 
-//       #check if PCA axis is pointing in direction of increaasing hit times
-//       avgPosPDistTimes /= (1.0*nPosPDists)
-//       avgNegPDistTimes /= (1.0*nNegPDists)
-//       if avgPosPDistTimes > 0.:
-//         eventPCAxis0TSlope[0] = 1
-//       else:
-//         eventPCAxis0TSlope[0] = -1
+            if ( ldist>0 ) {
+                avePosPDistTimes += hit.tick;
+                nPosPDists++;
+            }
+            else {
+                aveNegPDistTimes += hit.tick;
+                nNegPDists += 1;
+            }
 
-//       #calculate maximum point gap along PCA projection and maximum charge in between gaps
-//       maxGapFull = -1.
-//       maxGap90 = -1.
-//       maxGap80 = -1.
-//       maxGap70 = -1.
-//       maxGap60 = -1.
-//       maxCntD02 = -1.
-//       maxCntD04 = -1.
-//       maxCntD06 = -1.
-//       maxCntD08 = -1.
-//       maxCntD10 = -1.
-//       currentCntD02 = 0.
-//       currentCntD04 = 0.
-//       currentCntD06 = 0.
-//       currentCntD08 = 0.
-//       currentCntD10 = 0.
+            for (int c = 0; c < 3; c++) {
+                projPt[c] = eventCluster.pca_center[c] + ldist * event_data->eventPCAxis0[c];
+            }
+            float projDist = 0.0f;
+            for (int c = 0; c < 3; c++) {
+                projDist += (projPt[c] - vtxProj[c]) * (projPt[c] - vtxProj[c]);
+            }
+            projDists.push_back(std::sqrt(projDist));
+        }
+    }
+    
+    // Sort projection distances
+    std::sort(projDists.begin(), projDists.end());
 
-//       for iEP in range(1, len(projDists)):
+    // #check if PCA axis is pointing in direction of increaasing hit times
+    avePosPDistTimes /= (1.0*nPosPDists);
+    aveNegPDistTimes /= (1.0*nNegPDists);
+    if ( avePosPDistTimes > 0.)
+      event_data->eventPCAxis0TSlope = 1;
+    else
+      event_data->eventPCAxis0TSlope = -1;
 
-//         gap = projDists[iEP] - projDists[iEP-1]
-
-//         if gap > maxGapFull:
-//           maxGapFull = gap
-//         if iEP < int(0.9*len(projDists)) and gap > maxGap90:
-//           maxGap90 = gap
-//         if iEP < int(0.8*len(projDists)) and gap > maxGap80:
-//           maxGap80 = gap
-//         if iEP < int(0.7*len(projDists)) and gap > maxGap70:
-//           maxGap70 = gap
-//         if iEP < int(0.6*len(projDists)) and gap > maxGap60:
-//           maxGap60 = gap
-
-//         if gap > 2. or iEP == (len(projDists) - 1):
-//           if currentCntD02 > maxCntD02:
-//             maxCntD02 = currentCntD02
-//           currentCntD02 = 0.
-//         else:
-//           currentCntD02 += gap
-//         if gap > 4. or iEP == (len(projDists) - 1):
-//           if currentCntD04 > maxCntD04:
-//             maxCntD04 = currentCntD04
-//           currentCntD04 = 0.
-//         else:
-//           currentCntD04 += gap
-//         if gap > 6. or iEP == (len(projDists) - 1):
-//           if currentCntD06 > maxCntD06:
-//             maxCntD06 = currentCntD06
-//           currentCntD06 = 0.
-//         else:
-//           currentCntD06 += gap
-//         if gap > 8. or iEP == (len(projDists) - 1):
-//           if currentCntD08 > maxCntD08:
-//             maxCntD08 = currentCntD08
-//           currentCntD08 = 0.
-//         else:
-//           currentCntD08 += gap
-//         if gap > 10. or iEP == (len(projDists) - 1):
-//           if currentCntD10 > maxCntD10:
-//             maxCntD10 = currentCntD10
-//           currentCntD10 = 0.
-//         else:
-//           currentCntD10 += gap
-
-//       eventPCProjMaxGap[0] = maxGapFull
-//       eventPCProjMaxGap[1] = maxGap90
-//       eventPCProjMaxGap[2] = maxGap80
-//       eventPCProjMaxGap[3] = maxGap70
-//       eventPCProjMaxGap[4] = maxGap60
-//       eventPCProjMaxDist[0] = maxCntD02
-//       eventPCProjMaxDist[1] = maxCntD04
-//       eventPCProjMaxDist[2] = maxCntD06
-//       eventPCProjMaxDist[3] = maxCntD08
-//       eventPCProjMaxDist[4] = maxCntD10
+    // Calculate maximum point gap along PCA projection
+    float maxGapFull = -1.0f;
+    float maxCntD02 = -1.0f;
+    float currentCntD02 = 0.0f;
+    
+    for (size_t iEP = 1; iEP < projDists.size(); iEP++) {
+        float gap = projDists[iEP] - projDists[iEP-1];
+        
+        // Track maximum gap
+        if (gap > maxGapFull) {
+            maxGapFull = gap;
+        }
+        
+        // Track maximum continuous distance with gaps <= 2.0
+        if (gap > 2.0f || iEP == (projDists.size() - 1)) {
+            if (currentCntD02 > maxCntD02) {
+                maxCntD02 = currentCntD02;
+            }
+            currentCntD02 = 0.0f;
+        } else {
+            currentCntD02 += gap;
+        }
+    }
+    
+    // Store the results
+    event_data->eventPCProjMaxGap = maxGapFull;
+    event_data->eventPCProjMaxDist = maxCntD02;
 
     return true;
 

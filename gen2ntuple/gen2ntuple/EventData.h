@@ -310,6 +310,7 @@ struct EventData {
     std::array<float, 3> eventPCEigenVals;
     float eventPCProjMaxGap;
     float eventPCProjMaxDist;
+    int eventPCAxis0TSlope;
     
     // ===============================
     // Initialization and utilities
