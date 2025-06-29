@@ -1,0 +1,25 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find ROOT
+find_dependency(ROOT CONFIG REQUIRED)
+
+# Find UBDL packages
+find_dependency(larlite)
+find_dependency(larcv)
+find_dependency(ublarcvapp)
+find_dependency(larflow)
+
+# Check if components exist
+set(photon_selection_study_FOUND TRUE)
+
+# Import targets
+include("${CMAKE_CURRENT_LIST_DIR}/@TARGETS_EXPORT_NAME@.cmake")
+
+# Set variables
+set(PHOTON_SELECTION_STUDY_INCLUDE_DIRS "@PACKAGE_GEN2NTUPLE_INCLUDE_DIR@")
+set(PHOTON_SELECTION_STUDY_LIBRARY_DIRS "@PACKAGE_GEN2NTUPLE_LIBRARY_DIR@")
+set(PHOTON_SELECTION_STUDY_LIBRARIES gen2ntuple)
+
+check_required_components(photon_selection_study)
