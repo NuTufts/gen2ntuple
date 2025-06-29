@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -38,7 +39,12 @@ bool isPrimaryPhoton(const ublarcvapp::mctools::MCPixelPGraph::Node_t& node,
                      const std::vector<float>& true_nu_vtx);
 std::vector<float> getTrueNuVertex(larlite::storage_manager& larlite_mgr);
 float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
-                           const std::vector<float>& reco_vtx);
+                           const std::vector<float>& reco_vtx,
+                           std::vector<float>& edep_pos);
+std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
+                                           const larflow::reco::NuVertexCandidate& nuvtx,
+                                           bool primary_only );
+float dwall( float x, float y, float z );
 
 int main( int nargs, char** argv )
 {
@@ -141,8 +147,10 @@ int main( int nargs, char** argv )
     int out_run, out_subrun, out_event, out_entry, out_vertexindex;
     float out_sinkhorndiv, out_totpefracerr, out_dist2truenuvtx, out_dist2photonedep;
     float out_totalpixelsum[3];
+    float out_median_pixsum;
     float out_photoncharge, out_photonnumhits;
     float out_observed_totpe, out_predicted_totpe;
+    float out_dwall_true_nuvtx, out_dwall_true_edep, out_dwall_reco_nuvtx;
     
     // Create branches
     output_tree->Branch("run", &out_run);
@@ -157,8 +165,12 @@ int main( int nargs, char** argv )
     output_tree->Branch("dist2truenuvtx", &out_dist2truenuvtx);
     output_tree->Branch("dist2photonedep", &out_dist2photonedep);
     output_tree->Branch("totalpixelsum", out_totalpixelsum, "totalpixelsum[3]/F");
+    output_tree->Branch("median_pixsum", &out_median_pixsum, "out_median_pixsum/F");
     output_tree->Branch("photoncharge", &out_photoncharge);
     output_tree->Branch("photonnumhits", &out_photonnumhits);
+    output_tree->Branch("dwall_true_nuvtx", &out_dwall_true_nuvtx);
+    output_tree->Branch("dwall_true_edep",  &out_dwall_true_edep);
+    output_tree->Branch("dwall_reco_nuvtx", &out_dwall_reco_nuvtx);
     
     // Setup flash predictor
     larflow::reco::NuVertexFlashPrediction flash_predictor;
@@ -170,7 +182,7 @@ int main( int nargs, char** argv )
     
     // Start event loop
     std::cout << "Starting event loop over " << nentries << " entries..." << std::endl;
-    nentries = 10; // remove this -- for debug
+    //nentries = 10; // remove this -- for debug
     
     for (int ientry = 0; ientry < nentries; ientry++) {
         if (ientry % 100 == 0) {
@@ -202,6 +214,7 @@ int main( int nargs, char** argv )
         
         // Get true neutrino vertex
         std::vector<float> true_nu_vtx = getTrueNuVertex(larlite_mgr);
+        out_dwall_true_nuvtx = dwall( true_nu_vtx[0], true_nu_vtx[1], true_nu_vtx[2] );
         
         // Check if this event has target neutrino interaction (primary photons)
         bool has_primary_photon = false;
@@ -275,18 +288,32 @@ int main( int nargs, char** argv )
                     out_totpefracerr = -999.0;
                 }
                 
-                // Calculate distance to true neutrino vertex
+                
                 std::vector<float> reco_vtx = {vtx.pos[0], vtx.pos[1], vtx.pos[2]};
+                out_dwall_reco_nuvtx = dwall( reco_vtx[0], reco_vtx[1], reco_vtx[2] );
+
+                // Calculate distance to true neutrino vertex
                 out_dist2truenuvtx = calculateDistance(reco_vtx, true_nu_vtx);
                 
                 // Calculate distance to photon energy deposition
-                out_dist2photonedep = getPhotonEdepDistance(mcpg, reco_vtx);
+                std::vector<float> edep_pos(3,0);
+                out_dist2photonedep = getPhotonEdepDistance(mcpg, reco_vtx, edep_pos);
+                if ( out_dist2photonedep>=0 ) {
+                    out_dwall_true_edep = dwall( edep_pos[0], edep_pos[1], edep_pos[2] );
+                }
+                else {
+                    out_dwall_true_edep = -999.0;
+                }
                 
                 // Calculate total pixel sum across planes
-                calculateTotalPixelSum(vtx, out_totalpixelsum);
+                std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, true );
+                for (int p=0; p<3; p++)
+                    out_totalpixelsum[p] = totalpixelsum[p];
+                std::sort( totalpixelsum.begin(), totalpixelsum.end() );
+                out_median_pixsum = totalpixelsum[1];
                 
                 // Calculate photon-related variables
-                out_photoncharge = calculatePhotonCharge(vtx);
+                out_photoncharge  = calculatePhotonCharge(vtx);
                 out_photonnumhits = calculatePhotonNumHits(vtx);
                 
                 // Fill output tree
@@ -431,8 +458,11 @@ std::vector<float> getTrueNuVertex(larlite::storage_manager& larlite_mgr) {
 }
 
 float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
-                           const std::vector<float>& reco_vtx) {
+                           const std::vector<float>& reco_vtx,
+                           std::vector<float>& edep_pos ) {
+
     float min_distance = -1.0;
+    edep_pos.resize(3,0.0);
     
     for (const auto& node : mcpg.node_v) {
         if (node.pid == 22 && node.origin == 1) {  // Primary photon
@@ -447,6 +477,9 @@ float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
                                         pow(point[2] - reco_vtx[2], 2));
                         if (min_distance < 0 || dist < min_distance) {
                             min_distance = dist;
+                            edep_pos[0] = point[0];
+                            edep_pos[1] = point[1];
+                            edep_pos[2] = point[2];
                         }
                     }
                 }
@@ -458,4 +491,134 @@ float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
     }
     
     return min_distance;
+}
+
+std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
+                                           const larflow::reco::NuVertexCandidate& nuvtx,
+                                           bool primary_only ) 
+{
+
+    int ntracks  = nuvtx.track_v.size();
+    int nshowers = nuvtx.shower_v.size();
+
+    std::vector<float> total_charge(3,0.0);
+
+    auto ev_img = (larcv::EventImage2D*)larcv_io.get_data("image2d", "wire");
+    auto image2Dvec = ev_img->as_vector();
+    float threshold = 10.0f; // ADC threshold
+
+    for (int p = 0; p < 3; ++p ) {
+
+        auto const& img = image2Dvec.at(p);
+        std::set< std::array<int,3> > pixels_visited; // prevent double counting pixels
+
+        for (int track_idx=0; track_idx<ntracks; track_idx++) {
+
+            float clusterCharge = 0.0f;
+
+            if ( primary_only && nuvtx.track_isSecondary_v[track_idx]==1 ) {
+                // is secondary and we are only including primaries
+                continue;
+            }
+
+            auto const& cluster = nuvtx.track_hitcluster_v.at(track_idx);
+
+            for (auto const& hit : cluster) {
+
+                int row = int((hit.tick - 2400) / 6);
+                int col = int(hit.targetwire[p]);
+                
+                if (row >= 0 && row < (int)img.meta().rows() &&
+                    col >= 0 && col < (int)img.meta().cols()) {
+                    float pixVal = img.pixel(row, col);
+                    if (pixVal >= threshold) {
+                        std::array<int,3> pixindex = {p,row,col};
+                        if ( pixels_visited.find(pixindex)==pixels_visited.end()) {
+                            // not in set
+                            clusterCharge += pixVal;
+                            pixels_visited.insert( pixindex );
+                        }
+                    }
+                }
+            }
+
+            total_charge[p] += clusterCharge;
+
+        }//end of track loop
+
+        
+        // loop over showers
+        for (int shower_idx=0; shower_idx<nshowers; shower_idx++ ) {
+
+            float clusterCharge = 0.0f;
+
+            if ( primary_only && nuvtx.shower_isSecondary_v[shower_idx]==1 ) {
+                continue;
+            }
+
+            auto const& cluster = nuvtx.shower_v.at(shower_idx);
+
+            for (auto const& hit : cluster) {
+                int row = int((hit.tick - 2400) / 6);
+                int col = int(hit.targetwire[p]);
+                
+                if (row >= 0 && row < (int)img.meta().rows() &&
+                    col >= 0 && col < (int)img.meta().cols()) {
+    
+                    float pixVal = img.pixel(row, col);
+                    if (pixVal >= threshold) {
+                        std::array<int,3> pixindex = {p,row,col};
+    
+                        if ( pixels_visited.find(pixindex)==pixels_visited.end()) {
+                            // not in set
+                            clusterCharge += pixVal;
+                            pixels_visited.insert( pixindex );
+                        }
+                    }
+                }
+            }// loop over hits
+
+            total_charge[p] += clusterCharge;
+
+        }// loop over showers
+
+    }// loop over planes
+
+    return total_charge;
+}
+
+float dwall( float x, float y, float z ) {
+    float xmin = x;
+    float xmax = 256.0-x;
+    float ymin = y + 116.5; // y - -116.5
+    float ymax = 116.5-y;
+    float zmin = z;
+    float zmax = 1036.0-z;
+
+    std::array<float,6> dists = { xmin, xmax, ymin, ymax, zmin, zmax };
+
+    if ( xmin>=0 && xmax>=0 && ymin>=0 && ymax>=0 && zmin>=0 && zmax>=0 ) {
+        // is inside, find min
+        float mindist = 1.0e9;
+        for (auto& dist : dists ) {
+            if ( dist < mindist )
+                mindist = dist;
+        }
+        return mindist;
+    }
+    else {
+        // outside: only negative values
+        float mindist = 1.0e9;
+        for ( auto& dist : dists ) {
+            if ( dist>=0 ) continue; // must be on the "wrong" side of the boundary
+            if ( fabs(dist)<mindist )
+                mindist = fabs(dist);
+        }
+        // return a negative value to indicate we are outside the TPC
+        return -mindist;
+
+    }
+    
+    // should never get here
+    return 1.0e9;
 }
