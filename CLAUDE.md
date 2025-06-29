@@ -8,12 +8,23 @@ gen2ntuple creates ROOT ntuples from MicroBooNE LAr TPC reconstruction data. It 
 
 ## Essential Commands
 
+### Environment Setup (Tufts Cluster)
+```bash
+# Load singularity and enter container
+module load singularity/3.5.3
+singularity shell --bind /cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab /cluster/tufts/wongjiradlabnu/larbys/larbys-container/singularity_minkowskiengine_u20.04.cu111.torch1.9.0_comput8.sif
+# Enter bash when prompted
+```
+
 ### Initial Setup (One-time)
 ```bash
 # Compile the C++ fiducial volume library
 cd helpers/
 source compile_wirecell_fiducial_volume.sh
 cd ..
+
+# For C++ executables (e.g., photonselection study)
+source gen2ntuple/set_gen2ntuple_env.sh  # Sets GEN2NTUPLE_BINDIR/LIBDIR
 ```
 
 ### Running the Ntuple Maker
@@ -35,6 +46,11 @@ python make_dlgen2_flat_ntuples.py \
   -m /path/to/ResNet34_recoProng_5class_epoch20.pt \
   -o output_ntuple.root \
   -mc
+
+# Additional options
+# --ignoreWeights: Set weights to 1 (MC only)
+# --skipNoWeightEvts: Skip events without weights
+# --multiGPU: Use multiple GPUs for LArPID
 ```
 
 ### Testing/Verification
@@ -50,6 +66,14 @@ python tests/verify_photon_edep.py
 ```bash
 # Submit SLURM job
 sbatch tufts_submit_ntuple_job_example.sh
+```
+
+### Building C++ Components
+```bash
+# For photonselection study or other C++ components
+cd gen2ntuple/build
+cmake ..
+make
 ```
 
 ## High-Level Architecture
@@ -89,3 +113,5 @@ LArPID Classification → Energy Calculation → ROOT Ntuple Output
 - Event weights are crucial for proper POT scaling in MC samples
 - LArPID model path must point to a trained ResNet34 5-class model
 - Output ntuples contain 99+ physics variables documented in README.md
+- Track classification requires: ≥2 trajectory points, length >1e-6 cm, ≥10 above-threshold pixels
+- Shower classification requires: ≥10 above-threshold pixels in all three wire planes
