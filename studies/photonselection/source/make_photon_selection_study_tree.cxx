@@ -8,6 +8,7 @@
 // ROOT includes
 #include "TFile.h"
 #include "TTree.h"
+#include "TF1.h"
 
 // larcv includes
 #include "larcv/core/DataFormat/IOManager.h"
@@ -156,6 +157,11 @@ int main( int nargs, char** argv )
     float out_photoncharge, out_photonnumhits;
     float out_observed_totpe, out_predicted_totpe;
     float out_dwall_true_nuvtx, out_dwall_true_edep, out_dwall_reco_nuvtx;
+
+    float out_likelihood;
+    int out_is_closest_to_nuvtx, out_is_closest_to_edep;
+    int out_is_max_ll;
+    int out_num_event_vertices;
     
     // Create branches
     output_tree->Branch("run", &out_run);
@@ -182,6 +188,11 @@ int main( int nargs, char** argv )
     output_tree->Branch("dwall_true_nuvtx", &out_dwall_true_nuvtx);
     output_tree->Branch("dwall_true_edep",  &out_dwall_true_edep);
     output_tree->Branch("dwall_reco_nuvtx", &out_dwall_reco_nuvtx);
+    output_tree->Branch("out_likelihood",   &out_likelihood);
+    output_tree->Branch("out_is_closest_to_nuvtx", &out_is_closest_to_nuvtx);
+    output_tree->Branch("out_is_closest_to_edep",  &out_is_closest_to_edep);
+    output_tree->Branch("out_is_max_ll",           &out_is_max_ll );
+    output_tree->Branch("out_num_event_vertices",  &out_num_event_vertices );
     
     // Setup flash predictor
     larflow::reco::NuVertexFlashPrediction flash_predictor;
@@ -194,6 +205,17 @@ int main( int nargs, char** argv )
     // Start event loop
     std::cout << "Starting event loop over " << nentries << " entries..." << std::endl;
     //nentries = 10; // remove this -- for debug
+
+    // approximating likelihood
+    TF1 llfracerr("llfracerr","landau",0.0,100.0); // for x = 1.0+totpefracerr
+    llfracerr.SetParameter(0,8.00);
+    llfracerr.SetParameter(1,0.30);
+    llfracerr.SetParameter(2,0.18);
+
+    TF1 llsink("llsink","landau",0,40.0);
+    llsink.SetParameter(0,1.00);
+    llsink.SetParameter(1,1.45);
+    llsink.SetParameter(2,1.45);
     
     for (int ientry = 0; ientry < nentries; ientry++) {
         if (ientry % 100 == 0) {
@@ -229,46 +251,46 @@ int main( int nargs, char** argv )
         
         // Check if this event has target neutrino interaction (primary photons)
         bool has_primary_photon = false;
-	std::vector<float> photon_pixelsum(3,-1.0); // pixel sum for all of the photon
-	float photon_median_pixelsum = -1;
-	std::vector<float> edep_pixelsum(3,-1.0);   // pixel sum for the first cluster
-	float edep_median_pixelsum = -1;
-
-	int max_nodeidx = -1;
-	float max_median_pixelsum = -1;
-	int nnodes = mcpg.node_v.size();
-        for (int inode=0; inode<nnodes; inode++) {
-	  const auto& node = mcpg.node_v.at(inode);
-	  if (isPrimaryPhoton(node, true_nu_vtx)) {
-	    has_primary_photon = true;
-	    std::vector<float> planepixsums = node.pixsum_v;
-	    std::cout << "primary photon: trackid=" << node.tid << " E=" << node.E_MeV << " "
-		      << "pixsum_v=(" << planepixsums[0] << "," << planepixsums[1] << "," << planepixsums[2] << ")"
-		      << std::endl;	    
-	    if ( planepixsums.size()>=3 ) {
-	      // has pixel sum. sort to find median
-	      std::sort( planepixsums.begin(), planepixsums.end() );
-	      // check if this median pixelsum is the largest we've seen
-	      if ( max_median_pixelsum<0 || max_median_pixelsum<planepixsums[1] ) {
-		max_median_pixelsum = planepixsums[1];
-		max_nodeidx = inode;
-		photon_pixelsum = node.pixsum_v; // store unsorted values
-		std::vector<float> plane_edep = mcpg.getTruePhotonTrunkPlanePixelSums( node.tid );
-		edep_pixelsum = plane_edep; // copy over unsorted values
-		std::sort( plane_edep.begin(), plane_edep.end() ); // sort this vector
-		edep_median_pixelsum = plane_edep[1]; // use sorted values to get median edep
+	    std::vector<float> photon_pixelsum(3,-1.0); // pixel sum for all of the photon
+	    float photon_median_pixelsum = -1;
+	    std::vector<float> edep_pixelsum(3,-1.0);   // pixel sum for the first cluster
+	    float edep_median_pixelsum = -1;
+    
+	    int max_nodeidx = -1;
+	    float max_median_pixelsum = -1;
+	    int nnodes = mcpg.node_v.size();
+            for (int inode=0; inode<nnodes; inode++) {
+	      const auto& node = mcpg.node_v.at(inode);
+	      if (isPrimaryPhoton(node, true_nu_vtx)) {
+	        has_primary_photon = true;
+	        std::vector<float> planepixsums = node.pixsum_v;
+	        std::cout << "primary photon: trackid=" << node.tid << " E=" << node.E_MeV << " "
+	    	      << "pixsum_v=(" << planepixsums[0] << "," << planepixsums[1] << "," << planepixsums[2] << ")"
+	    	      << std::endl;	    
+	        if ( planepixsums.size()>=3 ) {
+	          // has pixel sum. sort to find median
+	          std::sort( planepixsums.begin(), planepixsums.end() );
+	          // check if this median pixelsum is the largest we've seen
+	          if ( max_median_pixelsum<0 || max_median_pixelsum<planepixsums[1] ) {
+	    	    max_median_pixelsum = planepixsums[1];
+	    	    max_nodeidx = inode;
+	    	    photon_pixelsum = node.pixsum_v; // store unsorted values
+	    	    std::vector<float> plane_edep = mcpg.getTruePhotonTrunkPlanePixelSums( node.tid );
+	    	    edep_pixelsum = plane_edep; // copy over unsorted values
+	    	    std::sort( plane_edep.begin(), plane_edep.end() ); // sort this vector
+	    	    edep_median_pixelsum = plane_edep[1]; // use sorted values to get median edep
+	          }
+	        }
 	      }
-	    }
-	  }
         }
 
-	// Pass true photon info to output tree variables
-	out_true_median_pixsum = max_median_pixelsum;
-	out_true_median_edep   = edep_median_pixelsum;
-	for (int p=0; p<3; p++) {
-	  out_true_pixelsum[p]   = photon_pixelsum[p];
-	  out_true_edeppixsum[p] = edep_pixelsum[p];
-	}
+	    // Pass true photon info to output tree variables
+	    out_true_median_pixsum = max_median_pixelsum;
+	    out_true_median_edep   = edep_median_pixelsum;
+	    for (int p=0; p<3; p++) {
+	      out_true_pixelsum[p]   = photon_pixelsum[p];
+	      out_true_edeppixsum[p] = edep_pixelsum[p];
+	    }
 
         
         // Get observed opflash
@@ -296,11 +318,39 @@ int main( int nargs, char** argv )
         const std::vector<larcv::Image2D>& adc_v = ev_adc->as_vector();
         
         // Process each vertex candidate
+
         if (nu_vetoed_v) {
+            out_num_event_vertices = nu_vetoed_v->size();
+
+            // We have to loop through values twice.
+            // The first is to collect info and determine max/min
+            // Then we save info to the tree
+
+            // First loop: store sinkhorn divergence and fractional error
+            // determine max likelihood vertex
+            // and closest vertices to the true nu vertex and largest photon edep
+            std::vector< float > sink_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > fracerr_v( nu_vetoed_v->size(),-10.0 );
+            std::vector< float > ll_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > dist_nuvtx_v( nu_vetoed_v->size(), -999.0 );
+            std::vector< float > dist_edep_v(  nu_vetoed_v->size(), -999.0 );
+            std::vector< float > dwall_nuvtx_v( nu_vetoed_v->size(), -999.0 );
+            std::vector< float > totpe_pred_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > dwall_true_edep_v( nu_vetoed_v->size(), -999.0 );
+            
+            float max_ll = 0.0;
+            float mindist_nuvtx = -1.0;
+            float mindist_edep  = -1.0;
+            int max_ll_index = -1;
+            float min_nuvtx_dist = -1.0;
+            float min_edep_dist  = -1.0;
+            int min_nuvtx_index = -1;
+            int min_edep_index = -1;
+
             for (size_t ivtx = 0; ivtx < nu_vetoed_v->size(); ivtx++) {
                 larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
-                out_vertexindex = (int)ivtx;
-                
+
+
                 // Calculate flash prediction variables
                 try {
                     auto predicted_flash = flash_predictor.predictFlash(
@@ -316,52 +366,112 @@ int main( int nargs, char** argv )
                     
                     // Convert map to vector for Sinkhorn calculation
                     std::vector<float> pred_pe_per_pmt(32, 0.0);
-                    out_predicted_totpe = 0.;
+                    float x_predicted_totpe = 0.;
                     for (int ipmt = 0; ipmt < 32; ipmt++) {
                         if (pe_per_pmt_map.find(ipmt) != pe_per_pmt_map.end()) {
                             pred_pe_per_pmt[ipmt] = pe_per_pmt_map[ipmt];
-                            out_predicted_totpe += pred_pe_per_pmt[ipmt];
+                            x_predicted_totpe += pred_pe_per_pmt[ipmt];
                         }
                     }
+                    totpe_pred_v[ivtx] = x_predicted_totpe;
                     
                     // Calculate flash prediction metrics
                     out_sinkhorndiv = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
                     out_totpefracerr = (pred_total_pe - obs_total_pe) / (0.1 + obs_total_pe);
+                    sink_v[ivtx] = out_sinkhorndiv;
+                    fracerr_v[ivtx] = out_totpefracerr;
                     
+                    float Lsink = llsink.Eval( out_sinkhorndiv );
+                    float Lfrac = llfracerr.Eval(  1.0+out_totpefracerr ); 
+                    float llvtx = Lsink*Lfrac;
+                    ll_v[ivtx] = llvtx;
+                    if ( llvtx > max_ll ) {
+                        max_ll = llvtx;
+                        max_ll_index = ivtx;
+                    }
+
                 } catch (const std::exception& e) {
                     std::cerr << "Warning: Flash prediction failed for entry " << ientry << ", vertex " << ivtx << ": " << e.what() << std::endl;
-                    out_sinkhorndiv = -999.0;
-                    out_totpefracerr = -999.0;
                 }
                 
-                
+                // determine dwall variable values and closest vertices for these metrics
+
                 std::vector<float> reco_vtx = {vtx.pos[0], vtx.pos[1], vtx.pos[2]};
-                out_dwall_reco_nuvtx = dwall( reco_vtx[0], reco_vtx[1], reco_vtx[2] );
+                float x_dwall_reco_nuvtx = dwall( reco_vtx[0], reco_vtx[1], reco_vtx[2] );
+                dwall_nuvtx_v[ivtx] = x_dwall_reco_nuvtx;
 
                 // Calculate distance to true neutrino vertex
-                out_dist2truenuvtx = calculateDistance(reco_vtx, true_nu_vtx);
+                dist_nuvtx_v[ivtx] = calculateDistance(reco_vtx, true_nu_vtx);
+                if ( min_nuvtx_dist<0 || min_nuvtx_dist>dist_nuvtx_v[ivtx]) {
+                    min_nuvtx_dist = dist_nuvtx_v[ivtx];
+                    min_nuvtx_index = ivtx;
+                }
                 
                 // Calculate distance to photon energy deposition
                 std::vector<float> edep_pos(3,0);
-                out_dist2photonedep = getPhotonEdepDistance(mcpg, reco_vtx, edep_pos);
+                dist_edep_v[ivtx] = getPhotonEdepDistance(mcpg, reco_vtx, edep_pos);
                 if ( out_dist2photonedep>=0 ) {
-                    out_dwall_true_edep = dwall( edep_pos[0], edep_pos[1], edep_pos[2] );
+                    // this can seem weird that a truth variable is tracking the reco vertices
+                    // that is because the "true" edep is the one we're closest to.
+                    dwall_true_edep_v[ivtx] = dwall( edep_pos[0], edep_pos[1], edep_pos[2] );
                 }
-                else {
-                    out_dwall_true_edep = -999.0;
+                if ( min_edep_dist<0 || min_edep_dist > dist_edep_v[ivtx] ) {
+                    min_edep_dist = dist_edep_v[ivtx];
+                    min_edep_index = ivtx;
                 }
                 
                 // Calculate total pixel sum across planes
-		std::vector<float> leadingshower_v(3,-1.0);
+		        std::vector<float> leadingshower_v(3,-1.0);
                 std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, leadingshower_v, true );
                 for (int p=0; p<3; p++) {
-		    out_allprong_pixelsum[p] = totalpixelsum[p];
-		    out_reco_pixelsum[p]     = leadingshower_v[p];
-		}
+		            out_allprong_pixelsum[p] = totalpixelsum[p];
+		            out_reco_pixelsum[p]     = leadingshower_v[p];
+		        }
                 std::sort( totalpixelsum.begin(), totalpixelsum.end() );
                 out_allprong_median_pixsum = totalpixelsum[1];
-		std::sort( leadingshower_v.begin(), leadingshower_v.end() );
-		out_reco_median_pixsum = leadingshower_v[1];
+		        std::sort( leadingshower_v.begin(), leadingshower_v.end() );
+		        out_reco_median_pixsum = leadingshower_v[1];
+                
+                // Calculate photon-related variables
+                out_photoncharge  = calculatePhotonCharge(vtx);
+                out_photonnumhits = calculatePhotonNumHits(vtx);
+                
+                // Fill output tree
+                output_tree->Fill();
+            }//end of first loop over vertices
+
+            // second loop is about sstoring values into the tree
+            for (int ivtx = 0; ivtx < (int)nu_vetoed_v->size(); ivtx++) {
+                larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
+                out_vertexindex = (int)ivtx;
+
+                out_is_closest_to_nuvtx = ( ivtx==min_nuvtx_index ) ? 1 : 0;
+                out_is_closest_to_edep  = ( ivtx==min_edep_index )  ? 1 : 0;
+                out_is_max_ll           = ( ivtx==max_ll_index )    ? 1 : 0;
+                out_num_event_vertices  = (int)nu_vetoed_v->size();
+
+                out_predicted_totpe     = totpe_pred_v[ivtx];
+                out_sinkhorndiv         = sink_v[ivtx];
+                out_totpefracerr        = fracerr_v[ivtx];
+                out_likelihood          = ll_v[ivtx];
+                out_dwall_reco_nuvtx    = dwall_nuvtx_v[ivtx];
+                out_dist2truenuvtx      = dist_nuvtx_v[ivtx];
+                out_dist2photonedep     = dist_edep_v[ivtx];
+                out_dwall_true_edep     = dwall_true_edep_v[ivtx];
+
+                // Calculate more info about each vertex
+                
+                // Calculate total pixel sum across planes
+		        std::vector<float> leadingshower_v(3,-1.0);
+                std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, leadingshower_v, true );
+                for (int p=0; p<3; p++) {
+		            out_allprong_pixelsum[p] = totalpixelsum[p];
+		            out_reco_pixelsum[p]     = leadingshower_v[p];
+		        }
+                std::sort( totalpixelsum.begin(), totalpixelsum.end() );
+                out_allprong_median_pixsum = totalpixelsum[1];
+		        std::sort( leadingshower_v.begin(), leadingshower_v.end() );
+		        out_reco_median_pixsum = leadingshower_v[1];
                 
                 // Calculate photon-related variables
                 out_photoncharge  = calculatePhotonCharge(vtx);
