@@ -162,6 +162,10 @@ int main( int nargs, char** argv )
     int out_is_closest_to_nuvtx, out_is_closest_to_edep;
     int out_is_max_ll;
     int out_num_event_vertices;
+    int out_is_target;
+    int out_has_visible_primary_photon;
+
+     out_vertexindex = 0;
     
     // Create branches
     output_tree->Branch("run", &out_run);
@@ -193,6 +197,8 @@ int main( int nargs, char** argv )
     output_tree->Branch("out_is_closest_to_edep",  &out_is_closest_to_edep);
     output_tree->Branch("out_is_max_ll",           &out_is_max_ll );
     output_tree->Branch("out_num_event_vertices",  &out_num_event_vertices );
+    output_tree->Branch("out_is_target",           &out_is_target );
+    output_tree->Branch("out_has_visible_primary_photon", &out_has_visible_primary_photon );
     
     // Setup flash predictor
     larflow::reco::NuVertexFlashPrediction flash_predictor;
@@ -218,7 +224,7 @@ int main( int nargs, char** argv )
     llsink.SetParameter(2,1.45);
     
     for (int ientry = 0; ientry < nentries; ientry++) {
-        if (ientry % 100 == 0) {
+        if (ientry % 100 == 0 || true ) {
             std::cout << "Processing entry " << ientry << "/" << nentries << std::endl;
         }
         
@@ -232,6 +238,7 @@ int main( int nargs, char** argv )
         out_subrun = subrun;
         out_event = event;
         out_entry = ientry;
+        out_has_visible_primary_photon = 0;
         
         // Create MCPixelPGraph for MC truth information
         ublarcvapp::mctools::MCPixelPGraph mcpg;
@@ -259,7 +266,8 @@ int main( int nargs, char** argv )
 	    int max_nodeidx = -1;
 	    float max_median_pixelsum = -1;
 	    int nnodes = mcpg.node_v.size();
-            for (int inode=0; inode<nnodes; inode++) {
+        
+        for (int inode=0; inode<nnodes; inode++) {
 	      const auto& node = mcpg.node_v.at(inode);
 	      if (isPrimaryPhoton(node, true_nu_vtx)) {
 	        has_primary_photon = true;
@@ -280,6 +288,8 @@ int main( int nargs, char** argv )
 	    	    std::sort( plane_edep.begin(), plane_edep.end() ); // sort this vector
 	    	    edep_median_pixelsum = plane_edep[1]; // use sorted values to get median edep
 	          }
+              if ( edep_median_pixelsum>0 )
+                out_has_visible_primary_photon = 1;
 	        }
 	      }
         }
@@ -292,7 +302,6 @@ int main( int nargs, char** argv )
 	      out_true_edeppixsum[p] = edep_pixelsum[p];
 	    }
 
-        
         // Get observed opflash
         float obs_total_pe = 0.0;
         std::vector<float> obs_pe_per_pmt(32, 0.0);
@@ -385,7 +394,8 @@ int main( int nargs, char** argv )
                     float Lfrac = llfracerr.Eval(  1.0+out_totpefracerr ); 
                     float llvtx = Lsink*Lfrac;
                     ll_v[ivtx] = llvtx;
-                    if ( llvtx > max_ll ) {
+                    // if PE too low, then its untrustworth
+                    if ( totpe_pred_v[ivtx]>100.0 && llvtx > max_ll ) {
                         max_ll = llvtx;
                         max_ll_index = ivtx;
                     }
@@ -410,15 +420,19 @@ int main( int nargs, char** argv )
                 // Calculate distance to photon energy deposition
                 std::vector<float> edep_pos(3,0);
                 dist_edep_v[ivtx] = getPhotonEdepDistance(mcpg, reco_vtx, edep_pos);
-                if ( out_dist2photonedep>=0 ) {
+                if ( dist_edep_v[ivtx]>=0 ) {
+                    // the distance must be positive, else there is no photon deposit inside the detector
+
                     // this can seem weird that a truth variable is tracking the reco vertices
                     // that is because the "true" edep is the one we're closest to.
                     dwall_true_edep_v[ivtx] = dwall( edep_pos[0], edep_pos[1], edep_pos[2] );
+
+                    if ( min_edep_dist<0 || min_edep_dist > dist_edep_v[ivtx] ) {
+                        min_edep_dist = dist_edep_v[ivtx];
+                        min_edep_index = ivtx;
+                    }
                 }
-                if ( min_edep_dist<0 || min_edep_dist > dist_edep_v[ivtx] ) {
-                    min_edep_dist = dist_edep_v[ivtx];
-                    min_edep_index = ivtx;
-                }
+
                 
                 // Calculate total pixel sum across planes
 		        std::vector<float> leadingshower_v(3,-1.0);
@@ -436,15 +450,28 @@ int main( int nargs, char** argv )
                 out_photoncharge  = calculatePhotonCharge(vtx);
                 out_photonnumhits = calculatePhotonNumHits(vtx);
                 
-                // Fill output tree
-                output_tree->Fill();
             }//end of first loop over vertices
+
+            // determine which (if any) of the reco vertices is a target for us to tune for
+            int target_ivtx = -1;
+            if ( out_has_visible_primary_photon==1 ) {
+                // has a photon energy deposition, so we want to be able to pick a correct vertex
+                if ( out_dwall_true_nuvtx>0 ) {
+                  // true vertex is inside, we use the 
+                  target_ivtx = min_nuvtx_index;
+                }
+                else {
+                  // true vertex outside, so we use the closest true vertex
+                  target_ivtx = min_edep_index;
+                }
+            }
 
             // second loop is about sstoring values into the tree
             for (int ivtx = 0; ivtx < (int)nu_vetoed_v->size(); ivtx++) {
                 larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
                 out_vertexindex = (int)ivtx;
 
+                out_is_target           = ( ivtx==target_ivtx )      ? 1 : 0;
                 out_is_closest_to_nuvtx = ( ivtx==min_nuvtx_index ) ? 1 : 0;
                 out_is_closest_to_edep  = ( ivtx==min_edep_index )  ? 1 : 0;
                 out_is_max_ll           = ( ivtx==max_ll_index )    ? 1 : 0;
@@ -460,7 +487,7 @@ int main( int nargs, char** argv )
                 out_dwall_true_edep     = dwall_true_edep_v[ivtx];
 
                 // Calculate more info about each vertex
-                
+
                 // Calculate total pixel sum across planes
 		        std::vector<float> leadingshower_v(3,-1.0);
                 std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, leadingshower_v, true );
@@ -633,6 +660,13 @@ float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
                     
                 for (const auto& point : photon_points) {
                     if (point.size() >= 3 && reco_vtx.size() >= 3) {
+
+                        if ( point[0]==0.0 && point[1]==0.0 && point[2]==0.0 ) {
+                            // this is a null edep position
+                            // photon did not deposit
+                            continue;
+                        }
+
                         float dist = sqrt(pow(point[0] - reco_vtx[0], 2) +
                                         pow(point[1] - reco_vtx[1], 2) +
                                         pow(point[2] - reco_vtx[2], 2));
