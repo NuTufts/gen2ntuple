@@ -41,6 +41,7 @@ set(GEN2NTUPLE_SOURCES
   HighestKPRankWithVisEnergy.cxx
   GetNuCandidateIntimeCharge.cxx
   FlashPEVertexSelection.cxx
+  PhotonVertexSelection.cxx
   
   # Utilities
   WCFiducial.cxx
@@ -74,6 +75,7 @@ set(GEN2NTUPLE_HEADERS
   HighestKPRankWithVisEnergy.h
   GetNuCandidateIntimeCharge.h
   FlashPEVertexSelection.h
+  PhotonVertexSelection.h
   
   # Utilities
   WCFiducial.h
@@ -92,7 +94,7 @@ target_link_libraries(gen2ntuple
   -L$ENV{LARCV_LIBDIR} -lLArCVCoreBase -lLArCVCoreDataFormat -lLArCVCoreProcessor
   -L$ENV{LARLITE_LIBDIR} -llarlite_Base -llarlite_DataFormat -llarlite_LArUtil
   -L$ENV{LARPID_LIBDIR} -lLArPID_Data -lLArPID_Model -lLArPID_Interface
-  -L$ENV{LARFLOW_LIBDIR} -lLArFlow_Reco -lLArFlow_SCBoundary -lLArFlow_RecoUtils LArFlow_ProngCNN
+  -L$ENV{LARFLOW_LIBDIR} -lLArFlow_Reco -lLArFlow_SCBoundary -lLArFlow_RecoUtils
   -L$ENV{UBLARCVAPP_LIBDIR} -lLArCVApp_ubdllee -lLArCVApp_UBPhotonLib -lLArCVApp_ParticleToPixelUtils -lLArCVApp_MCTools -lLArCVApp_dbscan
   ${TORCH_LIBRARIES}
   ${Python3_LIBRARIES}

@@ -26,6 +26,7 @@
 #include "HighestKPRankWithVisEnergy.h"
 #include "GetNuCandidateIntimeCharge.h"
 #include "FlashPEVertexSelection.h"
+#include "PhotonVertexSelection.h"
 
 namespace gen2ntuple {
 
@@ -446,6 +447,9 @@ bool VertexSelector::loadVertexSelectionMethods() {
         
     _vertex_selection_methods_m["flash_pe_selection"] = 
         std::make_unique<FlashPEVertexSelection>();
+
+    _vertex_selection_methods_m["photon_vertex_selection"] = 
+        std::make_unique<PhotonVertexSelection>();
     
     std::cout << "VertexSelector: Loaded " << _vertex_selection_methods_m.size() 
               << " vertex selection methods" << std::endl;
