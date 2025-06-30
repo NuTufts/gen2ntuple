@@ -11,7 +11,7 @@ ubdlDir=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/ubdl/
 outDir=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/photonselection/output/${SAMPLENAME}/
 PHOTON_SELECTION_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/photonselection/
 
-localDir=`printf /tmp/calc_photonselection_jobarrayid%05d ${SLURM_ARRAY_TASK_ID}`
+localDir=`printf /tmp/photonselection_jobarrayid%05d ${SLURM_ARRAY_TASK_ID}`
 mkdir -p ${localDir}
 mkdir -p ${outDir}
 
@@ -22,10 +22,10 @@ export PATH=${PHOTON_SELECTION_DIR}/build/installed/bin:${PATH}
 
 cd ${localDir}
 
-maxFileCount=`wc -l < $kpsRecoFiles`
+maxFileCount=`wc -l < ${RECO_FILELIST}`
 let firstfile="${SLURM_ARRAY_TASK_ID}*${NFILES}+1"
 let lastfile="${firstfile}+$NFILES-1"
-echo "filest to run between first=${firstfile} to last=${lastfile}"
+echo "files to run between first=${firstfile} to last=${lastfile} maxfilecount=${maxFileCount}"
 for n in $(seq $firstfile $lastfile); do
   if (($n > $maxFileCount)); then
     break
@@ -37,6 +37,7 @@ for n in $(seq $firstfile $lastfile); do
   mergedfile=`sed -n ${mergedfile_lineno}p ${DLMERGED_FILELIST}`
   recobase=`basename ${recofile}`
   outfile=`echo ${recobase} | sed 's|larflowreco|photonselection|g'`
+  cp ${recofile} ${recobase}
 
   fileOutDir=`printf ${outDir}/ntuplefile%05d ${SLURM_ARRAY_TASK_ID}`
   mkdir -p ${fileOutDir}
@@ -44,7 +45,7 @@ for n in $(seq $firstfile $lastfile); do
   echo "mergedfile: ${mergedfile}"
   echo "recobase: ${recobase}"
   echo "outfile: ${outfile}"
-  CMD="make_photon_selection_study_tree ${mergedfile} ${recofile} ${outfile} --tickbackward"
+  CMD="make_photon_selection_study_tree ${mergedfile} ${recobase} ${outfile} --tickbackward"
   echo ${CMD}
   ${CMD}
   

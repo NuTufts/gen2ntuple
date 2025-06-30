@@ -4,16 +4,17 @@
 #SBATCH --time=8:00:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=4000
-#SBATCH --array=0
-##SBATCH --partition=wongjiradlab
-#SBATCH --partition=batch
+#SBATCH --array=1-99
+#SBATCH --partition=wongjiradlab
+##SBATCH --partition=batch
 ##SBATCH --exclude=i2cmp006,s1cmp001,s1cmp002,s1cmp003,p1cmp005,p1cmp041,c1cmp003,c1cmp004i
 ##SBATCH --exclude=p1cmp075
 #SBATCH --error=err/griderr_photon_selection.sub00.%A.%a.node%N.err
 #SBATCH --output=log/stdout_photon_selection.sub00.%A.%a.node%N.log
 
 # Container to run in -- needs to be same as the one used to build UBDL
-CONTAINER=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
+#CONTAINER=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
+CONTAINER=/cluster/tufts/wongjiradlabnu/larbys/larbys-container/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
 
 # Location where this script is located
 REPO_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/photonselection/

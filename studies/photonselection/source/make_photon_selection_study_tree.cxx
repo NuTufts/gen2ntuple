@@ -43,6 +43,7 @@ float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
                            std::vector<float>& edep_pos);
 std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
                                            const larflow::reco::NuVertexCandidate& nuvtx,
+					   std::vector<float>& leading_shower_pixsum_v,
                                            bool primary_only );
 float dwall( float x, float y, float z );
 
@@ -146,8 +147,12 @@ int main( int nargs, char** argv )
     // Output tree variables
     int out_run, out_subrun, out_event, out_entry, out_vertexindex;
     float out_sinkhorndiv, out_totpefracerr, out_dist2truenuvtx, out_dist2photonedep;
-    float out_totalpixelsum[3];
-    float out_median_pixsum;
+    float out_true_edeppixsum[3];
+    float out_true_pixelsum[3];
+    float out_reco_pixelsum[3];    
+    float out_allprong_pixelsum[3];
+    float out_true_median_pixsum, out_true_median_edep;
+    float out_reco_median_pixsum, out_allprong_median_pixsum;
     float out_photoncharge, out_photonnumhits;
     float out_observed_totpe, out_predicted_totpe;
     float out_dwall_true_nuvtx, out_dwall_true_edep, out_dwall_reco_nuvtx;
@@ -157,16 +162,22 @@ int main( int nargs, char** argv )
     output_tree->Branch("subrun", &out_subrun);
     output_tree->Branch("event", &out_event);
     output_tree->Branch("entry", &out_entry);
-    output_tree->Branch("vertexindex", &out_vertexindex);
-    output_tree->Branch("observed_totpe", &out_observed_totpe );
+    output_tree->Branch("vertexindex",     &out_vertexindex);
+    output_tree->Branch("observed_totpe",  &out_observed_totpe );
     output_tree->Branch("predicted_totpe", &out_predicted_totpe );
-    output_tree->Branch("sinkhorndiv", &out_sinkhorndiv);
-    output_tree->Branch("totpefracerr", &out_totpefracerr);
-    output_tree->Branch("dist2truenuvtx", &out_dist2truenuvtx);
+    output_tree->Branch("sinkhorndiv",     &out_sinkhorndiv);
+    output_tree->Branch("totpefracerr",    &out_totpefracerr);
+    output_tree->Branch("dist2truenuvtx",  &out_dist2truenuvtx);
     output_tree->Branch("dist2photonedep", &out_dist2photonedep);
-    output_tree->Branch("totalpixelsum", out_totalpixelsum, "totalpixelsum[3]/F");
-    output_tree->Branch("median_pixsum", &out_median_pixsum, "out_median_pixsum/F");
-    output_tree->Branch("photoncharge", &out_photoncharge);
+    output_tree->Branch("true_pixelsum",   out_true_pixelsum,   "true_pixselsum[3]/F");
+    output_tree->Branch("true_edeppixsum", out_true_edeppixsum, "true_edeppixsum[3]/F");
+    output_tree->Branch("true_median_pixsum", &out_true_median_pixsum );
+    output_tree->Branch("true_median_edep",   &out_true_median_edep );
+    output_tree->Branch("reco_pixelsum",       out_reco_pixelsum,  "reco_pixelsum[3]/F");
+    output_tree->Branch("reco_median_pixsum",     &out_reco_median_pixsum );
+    output_tree->Branch("allprong_pixelsum",      out_allprong_pixelsum,  "allprong_pixelsum[3]/F");
+    output_tree->Branch("allprong_median_pixsum", &out_allprong_median_pixsum );
+    output_tree->Branch("photoncharge",  &out_photoncharge);
     output_tree->Branch("photonnumhits", &out_photonnumhits);
     output_tree->Branch("dwall_true_nuvtx", &out_dwall_true_nuvtx);
     output_tree->Branch("dwall_true_edep",  &out_dwall_true_edep);
@@ -218,12 +229,47 @@ int main( int nargs, char** argv )
         
         // Check if this event has target neutrino interaction (primary photons)
         bool has_primary_photon = false;
-        for (const auto& node : mcpg.node_v) {
-            if (isPrimaryPhoton(node, true_nu_vtx)) {
-                has_primary_photon = true;
-                break;
-            }
+	std::vector<float> photon_pixelsum(3,-1.0); // pixel sum for all of the photon
+	float photon_median_pixelsum = -1;
+	std::vector<float> edep_pixelsum(3,-1.0);   // pixel sum for the first cluster
+	float edep_median_pixelsum = -1;
+
+	int max_nodeidx = -1;
+	float max_median_pixelsum = -1;
+	int nnodes = mcpg.node_v.size();
+        for (int inode=0; inode<nnodes; inode++) {
+	  const auto& node = mcpg.node_v.at(inode);
+	  if (isPrimaryPhoton(node, true_nu_vtx)) {
+	    has_primary_photon = true;
+	    std::vector<float> planepixsums = node.pixsum_v;
+	    std::cout << "primary photon: trackid=" << node.tid << " E=" << node.E_MeV << " "
+		      << "pixsum_v=(" << planepixsums[0] << "," << planepixsums[1] << "," << planepixsums[2] << ")"
+		      << std::endl;	    
+	    if ( planepixsums.size()>=3 ) {
+	      // has pixel sum. sort to find median
+	      std::sort( planepixsums.begin(), planepixsums.end() );
+	      // check if this median pixelsum is the largest we've seen
+	      if ( max_median_pixelsum<0 || max_median_pixelsum<planepixsums[1] ) {
+		max_median_pixelsum = planepixsums[1];
+		max_nodeidx = inode;
+		photon_pixelsum = node.pixsum_v; // store unsorted values
+		std::vector<float> plane_edep = mcpg.getTruePhotonTrunkPlanePixelSums( node.tid );
+		edep_pixelsum = plane_edep; // copy over unsorted values
+		std::sort( plane_edep.begin(), plane_edep.end() ); // sort this vector
+		edep_median_pixelsum = plane_edep[1]; // use sorted values to get median edep
+	      }
+	    }
+	  }
         }
+
+	// Pass true photon info to output tree variables
+	out_true_median_pixsum = max_median_pixelsum;
+	out_true_median_edep   = edep_median_pixelsum;
+	for (int p=0; p<3; p++) {
+	  out_true_pixelsum[p]   = photon_pixelsum[p];
+	  out_true_edeppixsum[p] = edep_pixelsum[p];
+	}
+
         
         // Get observed opflash
         float obs_total_pe = 0.0;
@@ -306,11 +352,16 @@ int main( int nargs, char** argv )
                 }
                 
                 // Calculate total pixel sum across planes
-                std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, true );
-                for (int p=0; p<3; p++)
-                    out_totalpixelsum[p] = totalpixelsum[p];
+		std::vector<float> leadingshower_v(3,-1.0);
+                std::vector<float> totalpixelsum = calculateProngPixelSum( larcv_ioman, vtx, leadingshower_v, true );
+                for (int p=0; p<3; p++) {
+		    out_allprong_pixelsum[p] = totalpixelsum[p];
+		    out_reco_pixelsum[p]     = leadingshower_v[p];
+		}
                 std::sort( totalpixelsum.begin(), totalpixelsum.end() );
-                out_median_pixsum = totalpixelsum[1];
+                out_allprong_median_pixsum = totalpixelsum[1];
+		std::sort( leadingshower_v.begin(), leadingshower_v.end() );
+		out_reco_median_pixsum = leadingshower_v[1];
                 
                 // Calculate photon-related variables
                 out_photoncharge  = calculatePhotonCharge(vtx);
@@ -427,9 +478,9 @@ bool isPrimaryPhoton(const ublarcvapp::mctools::MCPixelPGraph::Node_t& node,
     if (true_nu_vtx.size() < 3) return false;
     
     // Check distance from neutrino vertex
-    float dist = sqrt(pow(node.first_tpc_pos[0] - true_nu_vtx[0], 2) +
-                     pow(node.first_tpc_pos[1] - true_nu_vtx[1], 2) +
-                     pow(node.first_tpc_pos[2] - true_nu_vtx[2], 2));
+    float dist = sqrt(pow(node.start[0] - true_nu_vtx[0], 2) +
+                      pow(node.start[1] - true_nu_vtx[1], 2) +
+                      pow(node.start[2] - true_nu_vtx[2], 2));
     
     return dist < 5.0;  // Within 5 cm of vertex
 }
@@ -495,6 +546,7 @@ float getPhotonEdepDistance(ublarcvapp::mctools::MCPixelPGraph& mcpg,
 
 std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
                                            const larflow::reco::NuVertexCandidate& nuvtx,
+					   std::vector<float>& leading_shower_pixsum_v,
                                            bool primary_only ) 
 {
 
@@ -502,6 +554,9 @@ std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
     int nshowers = nuvtx.shower_v.size();
 
     std::vector<float> total_charge(3,0.0);
+    leading_shower_pixsum_v.resize(3,-1.0);
+    for (int p=0; p<3; p++)
+      leading_shower_pixsum_v[p] = -1.0;
 
     auto ev_img = (larcv::EventImage2D*)larcv_io.get_data("image2d", "wire");
     auto image2Dvec = ev_img->as_vector();
@@ -547,7 +602,9 @@ std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
         }//end of track loop
 
         
-        // loop over showers
+        // loop over showers and get pixelsums for the plane
+	int leading_shower_index = -1;
+	float leading_shower_pixsum = -1.0;
         for (int shower_idx=0; shower_idx<nshowers; shower_idx++ ) {
 
             float clusterCharge = 0.0f;
@@ -578,10 +635,17 @@ std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
                 }
             }// loop over hits
 
+	    if ( leading_shower_pixsum<0 || clusterCharge>leading_shower_pixsum ) {
+	      leading_shower_pixsum = clusterCharge;
+	      leading_shower_index = shower_idx;
+	    }
+
             total_charge[p] += clusterCharge;
 
         }// loop over showers
 
+	leading_shower_pixsum_v[p] = leading_shower_pixsum;
+	
     }// loop over planes
 
     return total_charge;
