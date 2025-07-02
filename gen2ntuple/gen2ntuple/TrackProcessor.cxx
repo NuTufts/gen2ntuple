@@ -67,15 +67,15 @@ bool TrackProcessor::extractTrackInfo( larlite::storage_manager* larlite_io,
     // Get track collection from LArLite
     int vtxIdx = event_data->vtxIndex;
 
-    if ( reco_data->nuvtx_v->size()==0 ) {
-        // no reco vertices in this event. just return.
+    if ( reco_data->nuvtx_v->size()==0 || vtxIdx<0 ) {
+        // no reco vertices in this event or vertex selector rejected all possible vertices. just return.
         std::cout << "TrackProcessor::extractTrackInfo - no vertex in event" << std::endl;
         return true;
     }
 
-    if ( vtxIdx<0 || vtxIdx>=(int)reco_data->nuvtx_v->size() ) {
-        throw std::runtime_error("TrackProcess::extractTrackInfo -- vtxIndex unset -- needs to be selected in VertexSelector.");
-    }
+    // if ( vtxIdx<0 || vtxIdx>=(int)reco_data->nuvtx_v->size() ) {
+    //     throw std::runtime_error("TrackProcess::extractTrackInfo -- vtxIndex unset -- needs to be selected in VertexSelector.");
+    // }
     
     auto const& nuvtx = reco_data->nuvtx_v->at(vtxIdx);
     

@@ -157,10 +157,12 @@ int main( int nargs, char** argv )
     float out_photoncharge, out_photonnumhits;
     float out_observed_totpe, out_predicted_totpe;
     float out_dwall_true_nuvtx, out_dwall_true_edep, out_dwall_reco_nuvtx;
+    float out_keypoint_score;
 
     float out_likelihood;
     int out_is_closest_to_nuvtx, out_is_closest_to_edep;
     int out_is_max_ll;
+    int out_is_tier_selected;
     int out_num_event_vertices;
     int out_is_target;
     int out_has_visible_primary_photon;
@@ -192,10 +194,12 @@ int main( int nargs, char** argv )
     output_tree->Branch("dwall_true_nuvtx", &out_dwall_true_nuvtx);
     output_tree->Branch("dwall_true_edep",  &out_dwall_true_edep);
     output_tree->Branch("dwall_reco_nuvtx", &out_dwall_reco_nuvtx);
+    output_tree->Branch("keypoint_score", &out_keypoint_score );
     output_tree->Branch("out_likelihood",   &out_likelihood);
     output_tree->Branch("out_is_closest_to_nuvtx", &out_is_closest_to_nuvtx);
     output_tree->Branch("out_is_closest_to_edep",  &out_is_closest_to_edep);
     output_tree->Branch("out_is_max_ll",           &out_is_max_ll );
+    output_tree->Branch("out_is_tier_selected",    &out_is_tier_selected );
     output_tree->Branch("out_num_event_vertices",  &out_num_event_vertices );
     output_tree->Branch("out_is_target",           &out_is_target );
     output_tree->Branch("out_has_visible_primary_photon", &out_has_visible_primary_photon );
@@ -210,18 +214,41 @@ int main( int nargs, char** argv )
     
     // Start event loop
     std::cout << "Starting event loop over " << nentries << " entries..." << std::endl;
-    //nentries = 10; // remove this -- for debug
+    //nentries = 15; // remove this -- for debug
 
     // approximating likelihood
-    TF1 llfracerr("llfracerr","landau",0.0,100.0); // for x = 1.0+totpefracerr
-    llfracerr.SetParameter(0,8.00);
-    llfracerr.SetParameter(1,0.30);
-    llfracerr.SetParameter(2,0.18);
+    TF1* fL_farwall_fracerr  = new TF1( "farwall_fracerr", "gaus(0) + [3]*exp(-[4]*x)", -2.0, 100.0 );
+    float farwall_frac_const = 190.0;
+    float farwall_frac_mean  = 1.0;
+    float farwall_frac_sigma = 0.7;
+    //float farwall_frac_expconst = 150.0;
+    float farwall_frac_expconst  = 0.0;
+    float farwall_frac_lambda    = 1.0;
+    float farwall_frac_gaus_norm = farwall_frac_sigma*sqrt(2.0*3.14159)*farwall_frac_const;
+    float farwall_frac_exp_norm  = farwall_frac_expconst/farwall_frac_lambda;
+    float farwall_frac_totalnorm = farwall_frac_gaus_norm+farwall_frac_exp_norm;
+    fL_farwall_fracerr->SetParameter(0, farwall_frac_const/farwall_frac_totalnorm);
+    fL_farwall_fracerr->SetParameter(1, farwall_frac_mean);
+    fL_farwall_fracerr->SetParameter(2, farwall_frac_sigma);
+    fL_farwall_fracerr->SetParameter(3, farwall_frac_expconst/farwall_frac_totalnorm);
+    fL_farwall_fracerr->SetParameter(4, farwall_frac_lambda);
 
-    TF1 llsink("llsink","landau",0,40.0);
-    llsink.SetParameter(0,1.00);
-    llsink.SetParameter(1,1.45);
-    llsink.SetParameter(2,1.45);
+    TF1* fL_farwall_sinkdiv  = new TF1( "farwall_sinkdiv", "gaus(0) + [3]*exp(-[4]*x)", 0.0, 1000.0 );
+    //float farwall_sink_const = 96.0;
+    float farwall_sink_const = 0.0;
+    float farwall_sink_mean  = 1.4;
+    float farwall_sink_sigma = 0.7;
+    float farwall_sink_expconst = 245.0;
+    //float farwall_sink_lambda    = 0.17;
+    float farwall_sink_lambda    = 0.10;
+    float farwall_sink_gaus_norm = farwall_sink_sigma*sqrt(2.0*3.14159)*farwall_sink_const;
+    float farwall_sink_exp_norm  = farwall_sink_expconst/farwall_sink_lambda;
+    float farwall_sink_totalnorm = farwall_sink_gaus_norm+farwall_sink_exp_norm;
+    fL_farwall_sinkdiv->SetParameter(0, farwall_sink_const/farwall_sink_totalnorm);
+    fL_farwall_sinkdiv->SetParameter(1, farwall_sink_mean);
+    fL_farwall_sinkdiv->SetParameter(2, farwall_sink_sigma);
+    fL_farwall_sinkdiv->SetParameter(3, farwall_sink_expconst/farwall_sink_totalnorm);
+    fL_farwall_sinkdiv->SetParameter(4, farwall_sink_lambda);
     
     for (int ientry = 0; ientry < nentries; ientry++) {
         if (ientry % 100 == 0 || true ) {
@@ -258,14 +285,14 @@ int main( int nargs, char** argv )
         
         // Check if this event has target neutrino interaction (primary photons)
         bool has_primary_photon = false;
-	    std::vector<float> photon_pixelsum(3,-1.0); // pixel sum for all of the photon
-	    float photon_median_pixelsum = -1;
-	    std::vector<float> edep_pixelsum(3,-1.0);   // pixel sum for the first cluster
-	    float edep_median_pixelsum = -1;
-    
-	    int max_nodeidx = -1;
-	    float max_median_pixelsum = -1;
-	    int nnodes = mcpg.node_v.size();
+        std::vector<float> photon_pixelsum(3,-1.0); // pixel sum for all of the photon
+        float photon_median_pixelsum = -1;
+        std::vector<float> edep_pixelsum(3,-1.0);   // pixel sum for the first cluster
+        float edep_median_pixelsum = -1;
+        
+        int max_nodeidx = -1;
+        float max_median_pixelsum = -1;
+        int nnodes = mcpg.node_v.size();
         
         for (int inode=0; inode<nnodes; inode++) {
 	      const auto& node = mcpg.node_v.at(inode);
@@ -294,13 +321,13 @@ int main( int nargs, char** argv )
 	      }
         }
 
-	    // Pass true photon info to output tree variables
-	    out_true_median_pixsum = max_median_pixelsum;
-	    out_true_median_edep   = edep_median_pixelsum;
-	    for (int p=0; p<3; p++) {
-	      out_true_pixelsum[p]   = photon_pixelsum[p];
-	      out_true_edeppixsum[p] = edep_pixelsum[p];
-	    }
+        // Pass true photon info to output tree variables
+        out_true_median_pixsum = max_median_pixelsum;
+        out_true_median_edep   = edep_median_pixelsum;
+        for (int p=0; p<3; p++) {
+          out_true_pixelsum[p]   = photon_pixelsum[p];
+          out_true_edeppixsum[p] = edep_pixelsum[p];
+        }
 
         // Get observed opflash
         float obs_total_pe = 0.0;
@@ -346,6 +373,7 @@ int main( int nargs, char** argv )
             std::vector< float > dwall_nuvtx_v( nu_vetoed_v->size(), -999.0 );
             std::vector< float > totpe_pred_v( nu_vetoed_v->size(), -1.0 );
             std::vector< float > dwall_true_edep_v( nu_vetoed_v->size(), -999.0 );
+            std::vector< float > keypoint_score_v( nu_vetoed_v->size(), -999.0 );
             
             float max_ll = 0.0;
             float mindist_nuvtx = -1.0;
@@ -359,6 +387,7 @@ int main( int nargs, char** argv )
             for (size_t ivtx = 0; ivtx < nu_vetoed_v->size(); ivtx++) {
                 larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
 
+                keypoint_score_v[ivtx] = vtx.netScore;
 
                 // Calculate flash prediction variables
                 try {
@@ -379,26 +408,33 @@ int main( int nargs, char** argv )
                     for (int ipmt = 0; ipmt < 32; ipmt++) {
                         if (pe_per_pmt_map.find(ipmt) != pe_per_pmt_map.end()) {
                             pred_pe_per_pmt[ipmt] = pe_per_pmt_map[ipmt];
-                            x_predicted_totpe += pred_pe_per_pmt[ipmt];
+                            x_predicted_totpe     += pred_pe_per_pmt[ipmt];
                         }
                     }
                     totpe_pred_v[ivtx] = x_predicted_totpe;
                     
                     // Calculate flash prediction metrics
-                    out_sinkhorndiv = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
+                    out_sinkhorndiv  = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
                     out_totpefracerr = (pred_total_pe - obs_total_pe) / (0.1 + obs_total_pe);
-                    sink_v[ivtx] = out_sinkhorndiv;
-                    fracerr_v[ivtx] = out_totpefracerr;
+                    sink_v[ivtx]     = out_sinkhorndiv;
+                    fracerr_v[ivtx]  = out_totpefracerr;
                     
-                    float Lsink = llsink.Eval( out_sinkhorndiv );
-                    float Lfrac = llfracerr.Eval(  1.0+out_totpefracerr ); 
+                    float Lsink = fL_farwall_sinkdiv->Eval( out_sinkhorndiv );
+                    float Lfrac = fL_farwall_fracerr->Eval(  1.0+out_totpefracerr ); 
                     float llvtx = Lsink*Lfrac;
                     ll_v[ivtx] = llvtx;
+
                     // if PE too low, then its untrustworth
-                    if ( totpe_pred_v[ivtx]>100.0 && llvtx > max_ll ) {
+                    if ( llvtx > max_ll ) {
                         max_ll = llvtx;
                         max_ll_index = ivtx;
                     }
+
+                    // // if PE too low, then its untrustworth
+                    // if ( totpe_pred_v[ivtx]>100.0 && llvtx > max_ll ) {
+                    //     max_ll = llvtx;
+                    //     max_ll_index = ivtx;
+                    // }
 
                 } catch (const std::exception& e) {
                     std::cerr << "Warning: Flash prediction failed for entry " << ientry << ", vertex " << ivtx << ": " << e.what() << std::endl;
@@ -432,7 +468,6 @@ int main( int nargs, char** argv )
                         min_edep_index = ivtx;
                     }
                 }
-
                 
                 // Calculate total pixel sum across planes
 		        std::vector<float> leadingshower_v(3,-1.0);
@@ -466,15 +501,64 @@ int main( int nargs, char** argv )
                 }
             }
 
+            // Do logic using all the information we have.
+            // The light model is not precise enough to rank, but is probably best as a thresholder
+            // or helps to arrange in a tier. Within each tier we rank via the strength of the keypoint score.
+            // tier 1: falls within some idea range in both
+            std::vector<int> tier1_indices;
+            std::vector<int> tier2_indices;
+            std::vector<int> tier3_indices;
+            for (int ivtx = 0; ivtx < (int)nu_vetoed_v->size(); ivtx++) {
+
+                if ( sink_v[ivtx]<30.0 && fabs(fracerr_v[ivtx])<0.5 && totpe_pred_v[ivtx]>100.0 ) {
+                    // tier 1 test: ideal situations
+                    tier1_indices.push_back( ivtx );
+                }
+                else if ( fabs(fracerr_v[ivtx])<0.5 || (sink_v[ivtx]<30.0 && totpe_pred_v[ivtx]>100.0) ) {
+                    // tier 2 test: passes one of the good flash-match metrics
+                    tier2_indices.push_back( ivtx );
+                }
+                else {
+                    tier3_indices.push_back( ivtx );
+                }
+
+            }
+
+
+            int selected_tier_index = -1;
+            std::vector< std::vector<int>* > tier_lists = 
+                { &tier1_indices,
+                  &tier2_indices,
+                  &tier3_indices };
+
+            for ( auto& ptier_list : tier_lists ) {
+
+                if ( selected_tier_index>=0 )
+                    break; // already choose a vertex
+
+                
+                if ( ptier_list->size()>0 ) {
+                    float max_kp_score = 0.0;
+                    for (auto& vtxidx : *ptier_list ) {
+                        if ( keypoint_score_v[vtxidx]>max_kp_score ) {
+                            selected_tier_index = vtxidx;
+                            max_kp_score = keypoint_score_v[vtxidx];
+                        }
+                    }
+                }
+            }
+
+
             // second loop is about sstoring values into the tree
             for (int ivtx = 0; ivtx < (int)nu_vetoed_v->size(); ivtx++) {
                 larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
                 out_vertexindex = (int)ivtx;
 
-                out_is_target           = ( ivtx==target_ivtx )      ? 1 : 0;
-                out_is_closest_to_nuvtx = ( ivtx==min_nuvtx_index ) ? 1 : 0;
-                out_is_closest_to_edep  = ( ivtx==min_edep_index )  ? 1 : 0;
-                out_is_max_ll           = ( ivtx==max_ll_index )    ? 1 : 0;
+                out_is_target           = ( ivtx==target_ivtx )         ? 1 : 0;
+                out_is_closest_to_nuvtx = ( ivtx==min_nuvtx_index )     ? 1 : 0;
+                out_is_closest_to_edep  = ( ivtx==min_edep_index )      ? 1 : 0;
+                out_is_max_ll           = ( ivtx==max_ll_index )        ? 1 : 0;
+                out_is_tier_selected    = ( ivtx==selected_tier_index ) ? 1 : 0;
                 out_num_event_vertices  = (int)nu_vetoed_v->size();
 
                 out_predicted_totpe     = totpe_pred_v[ivtx];
@@ -485,6 +569,7 @@ int main( int nargs, char** argv )
                 out_dist2truenuvtx      = dist_nuvtx_v[ivtx];
                 out_dist2photonedep     = dist_edep_v[ivtx];
                 out_dwall_true_edep     = dwall_true_edep_v[ivtx];
+                out_keypoint_score      = keypoint_score_v[ivtx];
 
                 // Calculate more info about each vertex
 
@@ -747,8 +832,8 @@ std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
 
         
         // loop over showers and get pixelsums for the plane
-	int leading_shower_index = -1;
-	float leading_shower_pixsum = -1.0;
+   	    int leading_shower_index = -1;
+   	    float leading_shower_pixsum = -1.0;
         for (int shower_idx=0; shower_idx<nshowers; shower_idx++ ) {
 
             float clusterCharge = 0.0f;

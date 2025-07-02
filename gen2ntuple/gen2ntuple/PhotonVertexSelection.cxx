@@ -28,12 +28,13 @@ namespace gen2ntuple {
         farwall_frac_sigma = 0.7;
         farwall_frac_expconst = 150.0;
         farwall_frac_lambda    = 1.0;
-        farwall_frac_gaus_norm = 1.0/( farwall_frac_sigma*sqrt(2.0*3.14159)*farwall_frac_const);
-        farwall_frac_exp_norm  = farwall_frac_lambda/farwall_frac_expconst;
-        fL_farwall_fracerr->SetParameter(0, farwall_frac_const);
+        farwall_frac_gaus_norm = farwall_frac_sigma*sqrt(2.0*3.14159)*farwall_frac_const;
+        farwall_frac_exp_norm  = farwall_frac_expconst/farwall_frac_lambda;
+        float farwall_frac_totalnorm = farwall_frac_gaus_norm+farwall_frac_exp_norm;
+        fL_farwall_fracerr->SetParameter(0, farwall_frac_const/farwall_frac_totalnorm);
         fL_farwall_fracerr->SetParameter(1, farwall_frac_mean);
         fL_farwall_fracerr->SetParameter(2, farwall_frac_sigma);
-        fL_farwall_fracerr->SetParameter(3, farwall_frac_expconst);
+        fL_farwall_fracerr->SetParameter(3, farwall_frac_expconst/farwall_frac_totalnorm);
         fL_farwall_fracerr->SetParameter(4, farwall_frac_lambda);
 
         fL_farwall_sinkdiv  = new TF1( "farwall_sinkdiv", "gaus(0) + [3]*exp(-[4]*x)", 0.0, 1000.0 );
@@ -42,12 +43,13 @@ namespace gen2ntuple {
         farwall_sink_sigma = 0.7;
         farwall_sink_expconst = 245.0;
         farwall_sink_lambda    = 0.17;
-        farwall_sink_gaus_norm = 1.0/( farwall_sink_sigma*sqrt(2.0*3.14159)*farwall_sink_const);
-        farwall_sink_exp_norm  = farwall_sink_lambda/farwall_sink_expconst;
-        fL_farwall_sinkdiv->SetParameter(0, farwall_sink_const);
+        farwall_sink_gaus_norm = farwall_sink_sigma*sqrt(2.0*3.14159)*farwall_sink_const;
+        farwall_sink_exp_norm  = farwall_sink_expconst/farwall_sink_lambda;
+        float farwall_sink_totalnorm = farwall_sink_gaus_norm+farwall_sink_exp_norm;
+        fL_farwall_sinkdiv->SetParameter(0, farwall_sink_const/farwall_sink_totalnorm);
         fL_farwall_sinkdiv->SetParameter(1, farwall_sink_mean);
         fL_farwall_sinkdiv->SetParameter(2, farwall_sink_sigma);
-        fL_farwall_sinkdiv->SetParameter(3, farwall_sink_expconst);
+        fL_farwall_sinkdiv->SetParameter(3, farwall_sink_expconst/farwall_sink_totalnorm);
         fL_farwall_sinkdiv->SetParameter(4, farwall_sink_lambda);
 
         fL_nearwall_fracerr = new TF1( "nearwall_fracerr", "gaus(0) + [3]*exp(-[4]*x)", -2.0, 100.0 );
@@ -56,20 +58,21 @@ namespace gen2ntuple {
         nearwall_frac_sigma = 0.50;
         nearwall_frac_expconst  = 40.0;
         nearwall_frac_lambda    = 1.0;
-        nearwall_frac_gaus_norm = 1.0/( nearwall_frac_sigma*sqrt(2.0*3.14159)*nearwall_frac_const);
-        nearwall_frac_exp_norm  = nearwall_frac_lambda/nearwall_frac_expconst;
-        fL_nearwall_fracerr->SetParameter(0, nearwall_frac_const);
+        nearwall_frac_gaus_norm = nearwall_frac_sigma*sqrt(2.0*3.14159)*nearwall_frac_const;
+        nearwall_frac_exp_norm  = nearwall_frac_expconst/nearwall_frac_lambda;
+        float nearwall_frac_totalnorm = nearwall_frac_gaus_norm+nearwall_frac_exp_norm;
+        fL_nearwall_fracerr->SetParameter(0, nearwall_frac_const/nearwall_frac_totalnorm);
         fL_nearwall_fracerr->SetParameter(1, nearwall_frac_mean);
         fL_nearwall_fracerr->SetParameter(2, nearwall_frac_sigma);
-        fL_nearwall_fracerr->SetParameter(3, nearwall_frac_expconst);
+        fL_nearwall_fracerr->SetParameter(3, nearwall_frac_expconst/nearwall_frac_totalnorm);
         fL_nearwall_fracerr->SetParameter(4, nearwall_frac_lambda);
 
-        fL_nearwall_fracerr = new TF1( "nearwall_sinkdiv", "[0]*exp(-[1]*x)", 0.0, 1000.0 );
+        fL_nearwall_sinkdiv = new TF1( "nearwall_sinkdiv", "[0]*exp(-[1]*x)", 0.0, 1000.0 );
         nearwall_sink_expconst  = 91.0;
         nearwall_sink_lambda    = 0.08;  
-        nearwall_sink_exp_norm  = nearwall_frac_lambda/nearwall_frac_expconst;
-        fL_nearwall_fracerr->SetParameter(0, nearwall_sink_expconst);
-        fL_nearwall_fracerr->SetParameter(1, nearwall_sink_lambda);
+        nearwall_sink_exp_norm  = nearwall_frac_expconst/nearwall_frac_lambda;
+        fL_nearwall_sinkdiv->SetParameter(0, nearwall_sink_expconst/nearwall_sink_exp_norm);
+        fL_nearwall_sinkdiv->SetParameter(1, nearwall_sink_lambda);
     }
 
     PhotonVertexSelection::~PhotonVertexSelection()
@@ -104,10 +107,10 @@ namespace gen2ntuple {
         std::vector< float > fracerr_v( nvertices, -1.0 );
         std::vector< float > dwall_v( nvertices, -999.0 );
         std::vector< float > median_pixsum_v( nvertices, 0.0 );
-        std::vector< float > likelihood( nvertices, 0.0 );
+        std::vector< float > likelihood( nvertices, -1.0 );
+        std::vector< float > keypoint_score_v( nvertices, -1.0 );
         std::vector< std::vector<float> > totalpixelsum_v( nvertices );
         std::vector< std::vector<float> > leadingshower_vv( nvertices );
-
 
         // calculate the flash predictions
         float obs_total_pe = 0.0;
@@ -125,6 +128,7 @@ namespace gen2ntuple {
         } catch (const std::exception& e) {
             std::cerr << "Warning: Could not get opflash for event " << event_data->event << ": " << e.what() << std::endl;
         }
+        std::cout << "PhotonVertexSelection: obs_total_pe=" << obs_total_pe << std::endl;
         
         // Get ADC images for flash prediction
         auto ev_adc = (larcv::EventImage2D*)larcv_io->get_data(larcv::kProductImage2D, "wire");
@@ -149,10 +153,16 @@ namespace gen2ntuple {
             if ( nprim_showers==0 )
                 continue;
 
+            std::cout << "vertex[" << ivtx << "] primary nshowers=" << nprim_showers << std::endl;
+
             // determine dwall variable values and closest vertices for these metrics
             std::vector<float> reco_vtx = {vtx.pos[0], vtx.pos[1], vtx.pos[2]};
             float x_dwall_reco_nuvtx = dwall( reco_vtx[0], reco_vtx[1], reco_vtx[2] );
             dwall_v[ivtx] = x_dwall_reco_nuvtx;
+
+            std::cout << "  dwall=" << x_dwall_reco_nuvtx << " cm" << std::endl;
+
+            keypoint_score_v[ivtx] = vtx.netScore;
             
             // Calculate flash prediction variables
             try {
@@ -177,30 +187,38 @@ namespace gen2ntuple {
                     }
                 }
                 totpe_pred_v[ivtx] = x_predicted_totpe;
+                std::cout << "  predicted total pe: " << x_predicted_totpe << std::endl;
                 
                 // Calculate flash prediction metrics
                 float x_sinkhorndiv  = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
                 float x_totpefracerr = (pred_total_pe - obs_total_pe) / (0.1 + obs_total_pe);
                 sink_v[ivtx]    = x_sinkhorndiv;
                 fracerr_v[ivtx] = x_totpefracerr;
+                std::cout << "  sinkhorn divergence: " << x_sinkhorndiv << std::endl;
+                std::cout << "  totpe frac error: " << x_totpefracerr << std::endl;
 
                 float Lsink = 0.;
                 float Lfrac = 0.;
                 if ( x_dwall_reco_nuvtx>20.0 ) {
-                    Lfrac = fL_farwall_fracerr->Eval( 1.0+x_totpefracerr );
-                    Lsink = fL_farwall_sinkdiv->Eval( x_sinkhorndiv );
+                    Lfrac = 0.5*fL_farwall_fracerr->Eval( 1.0+x_totpefracerr );
+                    Lsink = 0.5*fL_farwall_sinkdiv->Eval( x_sinkhorndiv );
                 }
                 else {
                     Lfrac = fL_nearwall_fracerr->Eval( 1.0+x_totpefracerr );
                     Lsink = fL_nearwall_sinkdiv->Eval( x_sinkhorndiv );
                 }
+                std::cout << "  L(1+totpefracerr)=" << Lfrac << std::endl;
+                std::cout << "  L(sinkhorn_divergence)=" << Lsink << std::endl;
 
                 float x_likelihood = Lfrac*Lsink;
                 likelihood[ivtx] = x_likelihood;
+                std::cout << "  L = " << x_likelihood << std::endl;
 
                 // Calculate total pixel sum across planes
 		        std::vector<float> leadingshower_v(3,-1.0);
                 std::vector<float> totalpixelsum = calculateProngPixelSum( *larcv_io, vtx, leadingshower_v, true );
+                std::cout << "  totalpixelsum.size()=" << totalpixelsum.size() << std::endl;
+                std::cout << "  leadingshower_v.size()=" << leadingshower_v.size() << std::endl;
                 totalpixelsum_v[ivtx]  = totalpixelsum;
 		        leadingshower_vv[ivtx] = leadingshower_v;
                 std::sort( totalpixelsum.begin(), totalpixelsum.end() );
@@ -208,6 +226,7 @@ namespace gen2ntuple {
 		        std::sort( leadingshower_v.begin(), leadingshower_v.end() );
 		        float x_reco_median_pixsum = leadingshower_v[1];
                 median_pixsum_v[ivtx] = x_reco_median_pixsum;
+                std::cout << "  median pixel sum = " << x_reco_median_pixsum << std::endl;
                 
             } catch (const std::exception& e) {
                 std::cerr << "Warning: Flash prediction failed for entry " << event_data->event << ", "
@@ -216,9 +235,61 @@ namespace gen2ntuple {
         
         }//end of vertex loop
 
-        // decide
 
-        return 0;
+        // Do logic using all the information we have.
+        // The light model is not precise enough to rank, but it is to indicate if
+        // there is a threshold amount of agreement between the charge and flash.
+        // So we put the vertices into quality tiers based on the flash-matching
+        // and then rank within each tier based on the keypoint score which will have used DL
+        // to consider what the neighboor of ionization looks like.
+
+        // tier 1: falls within some idea range in both
+        // tier 2: one of the flash-match metrics were good
+        // tier 3: the rest
+        std::vector<int> tier1_indices;
+        std::vector<int> tier2_indices;
+        std::vector<int> tier3_indices;
+        for (int ivtx = 0; ivtx < (int)nuvtx_v.size(); ivtx++) {
+
+            if ( sink_v[ivtx]<30.0 && fabs(fracerr_v[ivtx])<0.5 && totpe_pred_v[ivtx]>100.0 ) {
+                // tier 1 test: ideal situations
+                tier1_indices.push_back( ivtx );
+            }
+            else if ( fabs(fracerr_v[ivtx])<0.5 || (sink_v[ivtx]<30.0 && totpe_pred_v[ivtx]>100.0) ) {
+                // tier 2 test: passes one of the good flash-match metrics
+                tier2_indices.push_back( ivtx );
+            }
+            else {
+                tier3_indices.push_back( ivtx );
+            }
+        }
+
+        int selected_tier_index = -1;
+        std::vector< std::vector<int>* > tier_lists = 
+            { &tier1_indices,
+              &tier2_indices,
+              &tier3_indices };
+        int itier = 1;
+        for ( auto& ptier_list : tier_lists ) {
+            if ( selected_tier_index>=0 )
+                break; // already choose a vertex
+            
+            if ( ptier_list->size()>0 ) {
+                float max_kp_score = 0.0;
+                for (auto& vtxidx : *ptier_list ) {
+                    if ( keypoint_score_v[vtxidx]>max_kp_score ) {
+                        selected_tier_index = vtxidx;
+                        max_kp_score = keypoint_score_v[vtxidx];
+                    }
+                }
+            }
+            if ( selected_tier_index>=0 ) {
+                std::cout << "Shower-containing vertex selected in flash-match quality Tier[" << itier << "]" << std::endl;
+            }
+            itier++;
+        }
+
+        return selected_tier_index;
     }
 
     float PhotonVertexSelection::dwall( float x, float y, float z )

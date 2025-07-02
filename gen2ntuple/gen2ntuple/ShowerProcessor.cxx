@@ -72,16 +72,16 @@ bool ShowerProcessor::extractShowerInfo(larlite::storage_manager* larlite_io,
     // Get shower collection from RecoData vertex candidates (similar to tracks)
     int vtxIdx = event_data->vtxIndex;
     
-    if (reco_data->nuvtx_v->size() == 0) {
+    if (reco_data->nuvtx_v->size() == 0 || vtxIdx<0 ) {
         // no reco vertices in this event. just return.
         std::cout << "ShowerProcessor::extractShowerInfo - no vertex in event" << std::endl;
         event_data->nShowers = 0;
         return true;
     }
 
-    if (vtxIdx < 0 || vtxIdx >= (int)reco_data->nuvtx_v->size()) {
-        throw std::runtime_error("ShowerProcessor::extractShowerInfo -- vtxIndex unset -- needs to be selected in VertexSelector.");
-    }
+    // if (vtxIdx < 0 || vtxIdx >= (int)reco_data->nuvtx_v->size()) {
+    //     throw std::runtime_error("ShowerProcessor::extractShowerInfo -- vtxIndex unset -- needs to be selected in VertexSelector.");
+    // }
     
     auto const& nuvtx = reco_data->nuvtx_v->at(vtxIdx);
     
