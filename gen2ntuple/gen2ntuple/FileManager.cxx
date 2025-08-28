@@ -17,7 +17,9 @@ FileManager::FileManager()
     : is_mc_(false), 
     is_dlana_(false), 
     current_entry_(0), 
-    total_entries_(0) {
+      total_entries_(0),
+      potTree_(nullptr)
+{
 }
 
 FileManager::~FileManager() {
@@ -120,6 +122,10 @@ bool FileManager::openFiles() {
     int larlite_entries = larlite_io_->get_entries();
     int larcv_entries   = larcv_io_->get_n_entries();
     int reco_entries    = kpsreco_->GetEntries();
+
+    if (is_mc_) {
+      setupPOTTree();
+    }
     
     total_entries_ = std::min(larlite_entries, larcv_entries);
     current_entry_ = 0;
@@ -129,6 +135,13 @@ bool FileManager::openFiles() {
     std::cout << "  LArCV entries: " << larcv_entries << std::endl;
     std::cout << "  Reco entries: " << reco_entries << std::endl;
     std::cout << "  Processing entries: " << total_entries_ << std::endl;
+
+    if (is_mc_) {
+      Double_t totgoodpot = getTotGoodPOT();
+      Double_t totpot = getTotPOT();
+      std::cout << "  Total POT: " << totpot << std::endl;
+      std::cout << "  Total Good POT: " << totgoodpot << std::endl;
+    }
     
     return true;
 }
@@ -189,6 +202,20 @@ bool FileManager::setupRecoIO() {
     return true;
 }
 
+bool FileManager::setupPOTTree() {
+  potTree_ = std::make_unique<TChain>("potsummary_generator_tree");
+
+  // Add truth files (merged_dlreco)
+  for (const auto& truth_file : truth_files_) {
+    potTree_->Add( truth_file.c_str() );
+  }
+  
+  potTree_->SetBranchAddress("totpot",        &pottree_totpot );
+  potTree_->SetBranchAddress("totgoodpot",    &pottree_totgoodpot );  
+
+  return true;
+}    
+
 void FileManager::closeFiles() {
     if (larlite_io_) {
         larlite_io_->close();
@@ -202,6 +229,10 @@ void FileManager::closeFiles() {
 
     if (kpsreco_) {
         kpsreco_.reset();
+    }
+
+    if (potTree_) {
+      potTree_.reset();
     }
 }
 
@@ -298,4 +329,37 @@ bool FileManager::synchronizeEvents() {
     }
 }
 
+Double_t FileManager::getTotPOT() {
+  
+  if ( !potTree_ ) {
+    return 0.0;
+  }
+  
+  int nentries = potTree_->GetEntries();
+  Double_t totpot = 0.;
+  for (int ientry=0; ientry<nentries; ientry++) {
+    potTree_->GetEntry(ientry);
+    totpot += pottree_totpot;
+  }
+
+  return totpot;
+  
+}
+
+Double_t FileManager::getTotGoodPOT() {
+  if ( !potTree_ ) {
+    return 0.0;
+  }
+  
+  int nentries = potTree_->GetEntries();
+  Double_t totgoodpot = 0.;
+  for (int ientry=0; ientry<nentries; ientry++) {
+    potTree_->GetEntry(ientry);
+    totgoodpot += pottree_totgoodpot;
+  }
+
+  return totgoodpot;
+  
+}
+  
 } // namespace gen2ntuple

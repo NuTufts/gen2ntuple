@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <string>
@@ -43,6 +44,8 @@ public:
     int getCurrentEntry() const { return current_entry_; }
     int getTotalEntries() const { return total_entries_; }
     bool isEndOfFile() const { return current_entry_ >= total_entries_; }
+    Double_t getTotPOT();
+    Double_t getTotGoodPOT();  
     
     // Data access
     larlite::storage_manager* getLarliteIO() { return larlite_io_.get(); }
@@ -76,6 +79,7 @@ private:
     std::unique_ptr<larlite::storage_manager> larlite_io_;
     std::unique_ptr<larcv::IOManager> larcv_io_;
     std::unique_ptr<TChain> kpsreco_;
+    std::unique_ptr<TChain> potTree_;  
 
     // Event tracking
     int current_entry_;
@@ -93,6 +97,12 @@ private:
     
     // File validation
     bool validateFiles() const;
+
+    // POT Tree
+  Double_t pottree_totpot;  
+  Double_t pottree_totgoodpot;
+  bool setupPOTTree();
+  
 };
 
 } // namespace gen2ntuple

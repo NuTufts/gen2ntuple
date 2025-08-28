@@ -252,22 +252,25 @@ int main(int argc, char** argv) {
                  std::to_string(event_data.subrun) + ":" + std::to_string(event_data.event));
     }
     
+    // Fill POT info for MC
+    if (config.isMC()) {
+      LOG_INFO("Save POT Info");
+      LOG_INFO("  Total POT: "+std::to_string(file_manager.getTotPOT()));
+      LOG_INFO("  Total Good POT: "+std::to_string(file_manager.getTotGoodPOT()));      
+      pot_data.totPOT = file_manager.getTotPOT();
+      pot_data.totGoodPOT = file_manager.getTotGoodPOT();
+      branch_manager.fillPOTTree();
+      LOG_INFO("Filled POT information");
+    }
+
     // Close input files
     file_manager.closeFiles();
     
-    LOG_INFO("Event processing complete. Processed " + std::to_string(events_processed) + " events");
-    
-    // Fill POT info for MC
-    if (config.isMC()) {
-        pot_data.totPOT = 1.0e20;
-        pot_data.totGoodPOT = 0.98e20;
-        branch_manager.fillPOTTree();
-        LOG_INFO("Filled POT information");
-    }
-    
+    LOG_INFO("Event processing complete. Processed " + std::to_string(events_processed) + " events");        
+
     // Write and close
     LOG_INFO("Writing output...");
-    branch_manager.write();
+    branch_manager.write();        
     
     // Get entry counts before closing file
     Long64_t event_entries = branch_manager.getEventEntries();
