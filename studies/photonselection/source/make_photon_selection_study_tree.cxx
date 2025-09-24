@@ -24,9 +24,17 @@
 #include "larflow/Reco/NuSelectionVariables.h"
 #include "larflow/Reco/NuVertexFlashPrediction.h"
 #include "larflow/Reco/SinkhornFlashDivergence.h"
+#include "larflow/Voxelizer/VoxelChargeCalculator.h"
 
 // ublarcvapp includes
 #include "ublarcvapp/MCTools/MCPixelPGraph.h"
+
+// flash match tools
+#include "flashmatch_dataprep/ModelInputInterface.h"
+#include "flashmatch_dataprep/SirenTorchModel.h"
+
+// torch headers for running sirenmodel
+#include <torch/torch.h>
 
 // Function declarations
 float calculateSinkhornDivergence(const std::vector<float>& pred_pe, 
@@ -48,24 +56,112 @@ std::vector<float> calculateProngPixelSum( larcv::IOManager& larcv_io,
                                            bool primary_only );
 float dwall( float x, float y, float z );
 
+
+/**
+ * @brief Parameters set by command Line arguments
+ * 
+ */
+struct ProgramConfig_t {
+    
+    std::string input_dlmerged_file;
+    std::string input_lanternreco_file;
+    std::string input_sirenmodel_file;
+    std::string output_root_file;
+
+    int max_events = -1;
+    int start_event = 0;
+    int verbosity   = 2;
+
+    ProgramConfig_t () = default;
+
+};
+
+/**
+ * @brief Print program usage
+ */
+void PrintUsage(const std::string& program_name) {
+    std::cout << "Usage: " << program_name << " [OPTIONS]\n\n"
+              << "Photon Selection Variables for Study\n"
+              << "Creates possible variables for selecting photon events.\n\n"
+              << "Required Arguments:\n"
+              << "  --input-dlmerged FILE          DL Merged file holding wire plane larcv images\n"
+              << "  --input-reco FILE              LANTERN reco file holding neutrino candidates\n"
+              << "  --siren-model FILE             Siren Model weights (from make_siren_trace.py)\n"
+              << "  --output FILE                  Output ROOT file with matched data\n\n"
+              << "Optional Arguments:\n"
+              << "  --max-events N            Maximum number of events to process\n"
+              << "  --start-event N           Starting event number (default: 0)\n"
+              << "  --verbosity N             Verbosity larcv level 0-2 (default: 2. Most verbose=0)\n"
+              << "  --help                    Display this help message\n\n"
+              << "Examples:\n"
+              << "  " << program_name << " --input-dlmerged dlmerged.root --input-reco output_lanternreco_kpsanafile.root --siren-model siren_extbnb.pt --output output_photonsel_variables.root\n";
+}
+
+/**
+ * @brief Parse command line arguments
+ */
+bool ParseArguments(int argc, char* argv[], ProgramConfig_t& config) {
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        
+        if (arg == "--help" || arg == "-h") {
+            return false;
+        } else if (arg == "--input-dlmerged" && i + 1 < argc) {
+            config.input_dlmerged_file = argv[++i];
+        } else if (arg == "--input-reco" && i + 1 < argc) {
+            config.input_lanternreco_file = argv[++i];
+        } else if (arg == "--siren-model" && i + 1 < argc) {
+            config.input_sirenmodel_file = argv[++i];
+        } else if (arg == "--output" && i + 1 < argc) {
+            config.output_root_file = argv[++i];
+        } else if (arg == "--max-events" && i + 1 < argc) {
+            config.max_events = std::atoi(argv[++i]);
+        } else if (arg == "--start-event" && i + 1 < argc) {
+            config.start_event = std::atoi(argv[++i]);
+        } else if (arg == "--verbosity" && i + 1 < argc) {
+            config.verbosity = std::atoi(argv[++i]);
+        } else {
+            std::cerr << "Error: Unknown argument " << arg << std::endl;
+            return false;
+        }
+    }
+    
+    // Check required arguments
+    if (config.input_dlmerged_file.empty()) {
+        std::cerr << "Error: Input file is required" << std::endl;
+        return false;
+    }
+
+    if (config.input_lanternreco_file.empty()) {
+        std::cerr << "Error: Input lantern reco file is required" << std::endl;
+        return false;
+    }
+
+    if (config.input_sirenmodel_file.empty()) {
+        std::cerr << "Error: Input Siren Model TorchScript file is required" << std::endl;
+        return false;
+    }
+    
+    if (config.output_root_file.empty() ) {
+        std::cerr << "Error: Must specify root output path" << std::endl;
+        return false;
+    }
+
+
+    return true;
+}
+
 int main( int nargs, char** argv )
 {
     std::cout << "Make Photon Selection Study Tree" << std::endl;
-    
-    // Parse arguments
-    if (nargs < 4) {
-        std::cout << "Usage: " << argv[0] << " <dlmerged_file> <reco_file> <output_file> [--tickbackward]" << std::endl;
-        std::cout << "  dlmerged_file: Input dlmerged ROOT file" << std::endl;
-        std::cout << "  reco_file: Input reco ROOT file with KPSRecoManagerTree" << std::endl;
-        std::cout << "  output_file: Output ROOT file for study tree" << std::endl;
-        std::cout << "  --tickbackward: Optional flag for TickBackward mode" << std::endl;
-        std::cout << "  --printmcpg: Optional flag to print MCPixelPGraph info for simulated particles in each event." << std::endl;
-        return 1;
+
+    ProgramConfig_t config;
+
+    if ( !ParseArguments(nargs, argv, config) ) {
+        std::string program_name = "make_photon_selection_study_tree";
+        PrintUsage( program_name );
+        return 0;
     }
-    
-    std::string dlmerged_file = argv[1];
-    std::string reco_file = argv[2];
-    std::string output_file = argv[3];
     bool tickbackward_mode = false;
     bool print_mcpg_info = false;
     
@@ -82,28 +178,29 @@ int main( int nargs, char** argv )
 
     }
     
-    std::cout << "Input dlmerged file: " << dlmerged_file << std::endl;
-    std::cout << "Input reco file: " << reco_file << std::endl;
-    std::cout << "Output file: " << output_file << std::endl;
+    std::cout << "Input dlmerged file: " << config.input_dlmerged_file << std::endl;
+    std::cout << "Input lantern reco file: " << config.input_lanternreco_file << std::endl;
+    std::cout << "Input siren model torchscript file: " << config.input_sirenmodel_file << std::endl;
+    std::cout << "Output file: " << config.output_root_file << std::endl;
     
     // Open files
     std::cout << "Opening files..." << std::endl;
     
     // Open dlmerged file with larcv IOManager for image-like data
     larcv::IOManager larcv_ioman(larcv::IOManager::kREAD, "IOManager", larcv::IOManager::kTickBackward);
-    larcv_ioman.add_in_file(dlmerged_file);
+    larcv_ioman.add_in_file(config.input_dlmerged_file);
     larcv_ioman.reverse_all_products();
     larcv_ioman.initialize();
     
     // Open dlmerged file with larlite storage_manager for particle data
     larlite::storage_manager larlite_mgr(larlite::storage_manager::kREAD);
-    larlite_mgr.add_in_filename(dlmerged_file);
+    larlite_mgr.add_in_filename(config.input_dlmerged_file);
     larlite_mgr.open();
     
     // Open reco file with ROOT TFile
-    TFile* reco_tfile = TFile::Open(reco_file.c_str(), "READ");
+    TFile* reco_tfile = TFile::Open(config.input_lanternreco_file.c_str(), "READ");
     if (!reco_tfile || reco_tfile->IsZombie()) {
-        std::cerr << "Error: Could not open reco file: " << reco_file << std::endl;
+        std::cerr << "Error: Could not open reco file: " << config.input_lanternreco_file << std::endl;
         return 1;
     }
     
@@ -142,12 +239,18 @@ int main( int nargs, char** argv )
     
     // Create output TTree
     std::cout << "Creating output tree..." << std::endl;
-    TFile* output_tfile = TFile::Open(output_file.c_str(), "RECREATE");
+    TFile* output_tfile = TFile::Open(config.output_root_file.c_str(), "RECREATE");
     TTree* output_tree = new TTree("PhotonSelectionTree", "Photon selection study data");
     
     // Output tree variables
     int out_run, out_subrun, out_event, out_entry, out_vertexindex;
-    float out_sinkhorndiv, out_totpefracerr, out_dist2truenuvtx, out_dist2photonedep;
+
+    float out_sinkhorndiv, out_totpefracerr, out_dist2truenuvtx, out_dist2photonedep, out_ubmodel_llr;
+    float out_siren_sinkhorndiv;
+    float out_siren_fracerr;
+    float out_siren_totpe;
+    float out_siren_llr;
+
     float out_true_edeppixsum[3];
     float out_true_pixelsum[3];
     float out_reco_pixelsum[3];    
@@ -169,18 +272,31 @@ int main( int nargs, char** argv )
 
      out_vertexindex = 0;
     
-    // Create branches
+    // Create branches: filled per NeutrinoVertexCandidate
     output_tree->Branch("run", &out_run);
     output_tree->Branch("subrun", &out_subrun);
     output_tree->Branch("event", &out_event);
     output_tree->Branch("entry", &out_entry);
     output_tree->Branch("vertexindex",     &out_vertexindex);
     output_tree->Branch("observed_totpe",  &out_observed_totpe );
+
+    // NeutrinoFlashPrediction: UB lightmodel implementation
     output_tree->Branch("predicted_totpe", &out_predicted_totpe );
     output_tree->Branch("sinkhorndiv",     &out_sinkhorndiv);
     output_tree->Branch("totpefracerr",    &out_totpefracerr);
+    output_tree->Branch("ubmodel_llr",     &out_ubmodel_llr);
+
+    // Siren Light Model
+    output_tree->Branch("siren_totpe",       &out_siren_totpe );
+    output_tree->Branch("siren_sinkhorndiv", &out_siren_sinkhorndiv );
+    output_tree->Branch("siren_fracerr",     &out_siren_fracerr );
+    output_tree->Branch("siren_llr",         &out_siren_llr );
+
+    // Vertexing
     output_tree->Branch("dist2truenuvtx",  &out_dist2truenuvtx);
     output_tree->Branch("dist2photonedep", &out_dist2photonedep);
+
+    // truth metrics
     output_tree->Branch("true_pixelsum",   out_true_pixelsum,   "true_pixselsum[3]/F");
     output_tree->Branch("true_edeppixsum", out_true_edeppixsum, "true_edeppixsum[3]/F");
     output_tree->Branch("true_median_pixsum", &out_true_median_pixsum );
@@ -211,6 +327,14 @@ int main( int nargs, char** argv )
     flash_predictor.setTrackConversionParams(3, 3, 0.3, 0.5);
     flash_predictor.setShowerConversionParams(3, 3);
     float adc_threshold = 10.0;
+
+    // Tools for Siren Model deployment
+    larflow::voxelizer::VoxelChargeCalculator voxel_charge_calc; ///< turn reco clusters into voxels with charge
+    voxel_charge_calc.set_verbosity( (::larcv::msg::Level_t)config.verbosity );
+    flashmatch::ModelInputInterface siren_input_interface;
+    flashmatch::SirenTorchModel sirenmodel;
+    sirenmodel.load_model_file( config.input_sirenmodel_file );
+    voxel_charge_calc.clear();
     
     // Start event loop
     std::cout << "Starting event loop over " << nentries << " entries..." << std::endl;
@@ -250,10 +374,13 @@ int main( int nargs, char** argv )
     fL_farwall_sinkdiv->SetParameter(3, farwall_sink_expconst/farwall_sink_totalnorm);
     fL_farwall_sinkdiv->SetParameter(4, farwall_sink_lambda);
     
+    int nprocessed = 0;
     for (int ientry = 0; ientry < nentries; ientry++) {
         if (ientry % 100 == 0 || true ) {
             std::cout << "Processing entry " << ientry << "/" << nentries << std::endl;
         }
+
+        nprocessed++;
         
         // Load entries
         larcv_ioman.read_entry(ientry);
@@ -352,7 +479,7 @@ int main( int nargs, char** argv )
         // Get ADC images for flash prediction
         auto ev_adc = (larcv::EventImage2D*)larcv_ioman.get_data(larcv::kProductImage2D, "wire");
         const std::vector<larcv::Image2D>& adc_v = ev_adc->as_vector();
-        
+
         // Process each vertex candidate
 
         if (nu_vetoed_v) {
@@ -439,6 +566,47 @@ int main( int nargs, char** argv )
                 } catch (const std::exception& e) {
                     std::cerr << "Warning: Flash prediction failed for entry " << ientry << ", vertex " << ivtx << ": " << e.what() << std::endl;
                 }
+
+                // Make prediction from SIREN MODEL
+
+                // clear the voxel calculator
+                voxel_charge_calc.clear();
+                
+                // pass adc images to the voxel charge calculator
+                voxel_charge_calc.set_images( adc_v );
+
+                // pass hit clusters of particles to voxel charge calc
+                for (size_t itrack=0; itrack < vtx.track_hitcluster_v.size(); itrack++ ) {
+                    auto const& hitcluster = vtx.track_hitcluster_v.at(itrack);
+                    voxel_charge_calc.add_larflow_hit_cluster( hitcluster );
+                }
+                for (size_t ishower=0; ishower<vtx.shower_v.size(); ishower++) {
+                    auto const& hitcluster = vtx.shower_v.at(ishower);
+                    voxel_charge_calc.add_larflow_hit_cluster( hitcluster );
+                }
+                voxel_charge_calc.calculate_voxel_charge(0.0);
+
+                auto const& voxel_charge_info = voxel_charge_calc.get_voxel_charge_info();
+                // make torch tensors based on voxel info
+                torch::Tensor voxel_features;
+                torch::Tensor voxel_charge;
+                siren_input_interface.prepare_input_tensor( voxel_charge_info, voxel_features, voxel_charge  );
+
+                // pass voxel info to the model
+                std::vector<float> siren_predicted_pe = sirenmodel.predict_pe( voxel_features, voxel_charge );
+
+                // clear the voxel calculator
+                voxel_charge_calc.clear();
+
+                out_siren_totpe = 0.0;
+                for (size_t ipmt=0; ipmt<siren_predicted_pe.size(); ipmt++) {
+                    out_siren_totpe += siren_predicted_pe.at(ipmt);
+                }
+
+                std::cout << "PE Totals" << std::endl;
+                std::cout << "  observed: " << out_observed_totpe << std::endl;
+                std::cout << "  ub model: " << out_predicted_totpe << std::endl;
+                std::cout << "  siren model: " << out_siren_totpe << std::endl;
                 
                 // determine dwall variable values and closest vertices for these metrics
 
@@ -592,6 +760,9 @@ int main( int nargs, char** argv )
                 // Fill output tree
                 output_tree->Fill();
             }
+
+            if ( config.max_events>0 && nprocessed>=config.max_events )
+                break;
         }
     }
     
@@ -606,8 +777,8 @@ int main( int nargs, char** argv )
     larlite_mgr.close();
     larcv_ioman.finalize();
     
-    std::cout << "Processing complete! Output written to: " << output_file << std::endl;
-    std::cout << "Total entries processed: " << nentries << std::endl;
+    std::cout << "Processing complete! Output written to: " << config.output_root_file << std::endl;
+    std::cout << "Total entries processed: " << nprocessed << std::endl;
     
     return 0;
 }

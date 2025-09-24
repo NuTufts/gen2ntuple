@@ -10,6 +10,7 @@ include_directories(
   ${LARPID_INCLUDE_DIR}
   ${LARFLOW_INCLUDE_DIR}  
   ${TORCH_INCLUDE_DIRS}
+  ${FLASHMATCH_DATAPREP_INCLUDE_DIR}
 )
 
 add_executable(make_photon_selection_study_tree make_photon_selection_study_tree.cxx )
@@ -22,6 +23,7 @@ target_link_libraries( make_photon_selection_study_tree PUBLIC
   LArPID_Data LArPID_Model LArPID_Interface
   LArFlow_Reco LArFlow_SCBoundary LArFlow_RecoUtils
   LArCVApp_ubdllee LArCVApp_UBPhotonLib LArCVApp_ParticleToPixelUtils LArCVApp_MCTools LArCVApp_dbscan
+  flashmatch::flashmatch_dataprep
   ${TORCH_LIBRARIES}
 #  ${Python3_LIBRARIES}
 )

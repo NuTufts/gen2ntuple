@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project( photon_selection_study VERSION 0.1 )
 
+set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Release)
+
 #---Install location by default is in the build directory
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set (CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/installed" CACHE PATH "${CMAKE_BUILD_DIR}" FORCE )
@@ -72,6 +75,9 @@ message( STATUS "Status for finding larpid: ${larpid_FOUND}" )
 
 set( larflow_DIR "$ENV{LARFLOW_LIBDIR}/cmake/larflow")
 find_package( larflow REQUIRED )
+
+set( flashmatch_dataprep_DIR "$ENV{FLASHMATCH_DIR}/dataprep/build/installed/lib/cmake/flashmatch_dataprep/")
+find_package( flashmatch_dataprep REQUIRED )
 
 
 # ## Git Submodules
