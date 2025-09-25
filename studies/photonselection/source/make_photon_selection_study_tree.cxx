@@ -245,11 +245,15 @@ int main( int nargs, char** argv )
     // Output tree variables
     int out_run, out_subrun, out_event, out_entry, out_vertexindex;
 
-    float out_sinkhorndiv, out_totpefracerr, out_dist2truenuvtx, out_dist2photonedep, out_ubmodel_llr;
+    float out_ubmodel_sinkhorndiv;
+    float out_ubmodel_fracerr;
+    float out_ubmodel_totpe;
+    float out_ubmodel_llr;
     float out_siren_sinkhorndiv;
     float out_siren_fracerr;
     float out_siren_totpe;
     float out_siren_llr;
+    float out_dist2truenuvtx, out_dist2photonedep;
 
     float out_true_edeppixsum[3];
     float out_true_pixelsum[3];
@@ -258,7 +262,7 @@ int main( int nargs, char** argv )
     float out_true_median_pixsum, out_true_median_edep;
     float out_reco_median_pixsum, out_allprong_median_pixsum;
     float out_photoncharge, out_photonnumhits;
-    float out_observed_totpe, out_predicted_totpe;
+    float out_observed_totpe; 
     float out_dwall_true_nuvtx, out_dwall_true_edep, out_dwall_reco_nuvtx;
     float out_keypoint_score;
 
@@ -281,10 +285,10 @@ int main( int nargs, char** argv )
     output_tree->Branch("observed_totpe",  &out_observed_totpe );
 
     // NeutrinoFlashPrediction: UB lightmodel implementation
-    output_tree->Branch("predicted_totpe", &out_predicted_totpe );
-    output_tree->Branch("sinkhorndiv",     &out_sinkhorndiv);
-    output_tree->Branch("totpefracerr",    &out_totpefracerr);
-    output_tree->Branch("ubmodel_llr",     &out_ubmodel_llr);
+    output_tree->Branch("ubmodel_totpe",       &out_ubmodel_totpe );
+    output_tree->Branch("ubmodel_sinkhorndiv", &out_ubmodel_sinkhorndiv);
+    output_tree->Branch("ubmodel_fracerr",     &out_ubmodel_fracerr);
+    output_tree->Branch("ubmodel_llr",         &out_ubmodel_llr);
 
     // Siren Light Model
     output_tree->Branch("siren_totpe",       &out_siren_totpe );
@@ -489,16 +493,23 @@ int main( int nargs, char** argv )
             // The first is to collect info and determine max/min
             // Then we save info to the tree
 
-            // First loop: store sinkhorn divergence and fractional error
+            // First loop over reco vertices: store sinkhorn divergence and fractional error
             // determine max likelihood vertex
             // and closest vertices to the true nu vertex and largest photon edep
-            std::vector< float > sink_v( nu_vetoed_v->size(), -1.0 );
-            std::vector< float > fracerr_v( nu_vetoed_v->size(),-10.0 );
+            std::vector< float > ubmodel_sink_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > ubmodel_totpe_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > ubmodel_fracerr_v( nu_vetoed_v->size(),-10.0 );
+
+            std::vector< float > siren_sink_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > siren_totpe_v( nu_vetoed_v->size(), -1.0 );
+            std::vector< float > siren_fracerr_v( nu_vetoed_v->size(),-10.0 );
+
             std::vector< float > ll_v( nu_vetoed_v->size(), -1.0 );
+
+            // vertex metrics
             std::vector< float > dist_nuvtx_v( nu_vetoed_v->size(), -999.0 );
             std::vector< float > dist_edep_v(  nu_vetoed_v->size(), -999.0 );
             std::vector< float > dwall_nuvtx_v( nu_vetoed_v->size(), -999.0 );
-            std::vector< float > totpe_pred_v( nu_vetoed_v->size(), -1.0 );
             std::vector< float > dwall_true_edep_v( nu_vetoed_v->size(), -999.0 );
             std::vector< float > keypoint_score_v( nu_vetoed_v->size(), -999.0 );
             
@@ -511,6 +522,7 @@ int main( int nargs, char** argv )
             int min_nuvtx_index = -1;
             int min_edep_index = -1;
 
+            // Loop over reconstructed neutrino vertices
             for (size_t ivtx = 0; ivtx < nu_vetoed_v->size(); ivtx++) {
                 larflow::reco::NuVertexCandidate& vtx = nu_vetoed_v->at(ivtx);
 
@@ -538,16 +550,14 @@ int main( int nargs, char** argv )
                             x_predicted_totpe     += pred_pe_per_pmt[ipmt];
                         }
                     }
-                    totpe_pred_v[ivtx] = x_predicted_totpe;
+                    ubmodel_totpe_v[ivtx] = x_predicted_totpe;
                     
                     // Calculate flash prediction metrics
-                    out_sinkhorndiv  = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
-                    out_totpefracerr = (pred_total_pe - obs_total_pe) / (0.1 + obs_total_pe);
-                    sink_v[ivtx]     = out_sinkhorndiv;
-                    fracerr_v[ivtx]  = out_totpefracerr;
+                    ubmodel_sink_v[ivtx]    = calculateSinkhornDivergence(pred_pe_per_pmt, obs_pe_per_pmt);
+                    ubmodel_fracerr_v[ivtx] = (pred_total_pe - obs_total_pe) / (0.1 + obs_total_pe);
                     
-                    float Lsink = fL_farwall_sinkdiv->Eval( out_sinkhorndiv );
-                    float Lfrac = fL_farwall_fracerr->Eval(  1.0+out_totpefracerr ); 
+                    float Lsink = fL_farwall_sinkdiv->Eval( out_ubmodel_sinkhorndiv );
+                    float Lfrac = fL_farwall_fracerr->Eval(  1.0+out_ubmodel_totpe ); 
                     float llvtx = Lsink*Lfrac;
                     ll_v[ivtx] = llvtx;
 
@@ -564,6 +574,9 @@ int main( int nargs, char** argv )
                     // }
 
                 } catch (const std::exception& e) {
+                    ubmodel_sink_v[ivtx]    = -1.0;
+                    ubmodel_fracerr_v[ivtx] = -1.0;
+                    ubmodel_totpe_v[ivtx]   = -1.0;
                     std::cerr << "Warning: Flash prediction failed for entry " << ientry << ", vertex " << ivtx << ": " << e.what() << std::endl;
                 }
 
@@ -587,26 +600,49 @@ int main( int nargs, char** argv )
                 voxel_charge_calc.calculate_voxel_charge(0.0);
 
                 auto const& voxel_charge_info = voxel_charge_calc.get_voxel_charge_info();
+                int num_voxels = voxel_charge_info.voxel_avepos_vv.size();
+
                 // make torch tensors based on voxel info
                 torch::Tensor voxel_features;
                 torch::Tensor voxel_charge;
-                siren_input_interface.prepare_input_tensor( voxel_charge_info, voxel_features, voxel_charge  );
+                torch::Tensor mask;
+                siren_input_interface.prepare_input_tensor( voxel_charge_info, voxel_features, voxel_charge, mask  );
+
+                // Print tensor information
+                std::cout << "voxel_features shape: " << voxel_features.sizes() << std::endl;
+                std::cout << "voxel_features dtype: " << voxel_features.dtype() << std::endl;
+                //std::cout << "voxel_features values:\n" << voxel_features << std::endl;
+
+                std::cout << "voxel_charge shape: " << voxel_charge.sizes() << std::endl;
+                std::cout << "voxel_charge dtype: " << voxel_charge.dtype() << std::endl;
+                int Nv = voxel_charge.sizes()[0]/32;
+                std::cout << "voxel_charge values:\n" << voxel_charge.reshape({Nv,32,1}).index({torch::indexing::Slice(), 0,0}) << std::endl;
+                // for (int ii=0; ii<num_voxels; ii++)
+                //     std::cout << "  voxel[" << ii << " ]" << voxel_charge.reshape({Nv,32,1}).index({ii,0}).item<float>() << std::endl;;
+
+                // voxel_features.Shape
 
                 // pass voxel info to the model
                 std::vector<float> siren_predicted_pe = sirenmodel.predict_pe( voxel_features, voxel_charge );
 
+                siren_totpe_v[ivtx] = 0.0;
+                for (size_t ipmt=0; ipmt<siren_predicted_pe.size(); ipmt++) {
+                    siren_totpe_v[ivtx] += siren_predicted_pe.at(ipmt);
+                }
+
+                siren_sink_v[ivtx]    = calculateSinkhornDivergence(siren_predicted_pe, obs_pe_per_pmt);
+                siren_fracerr_v[ivtx] = ( siren_totpe_v[ivtx] - obs_total_pe) / (0.1 + obs_total_pe);
+
                 // clear the voxel calculator
                 voxel_charge_calc.clear();
 
-                out_siren_totpe = 0.0;
-                for (size_t ipmt=0; ipmt<siren_predicted_pe.size(); ipmt++) {
-                    out_siren_totpe += siren_predicted_pe.at(ipmt);
-                }
-
-                std::cout << "PE Totals" << std::endl;
-                std::cout << "  observed: " << out_observed_totpe << std::endl;
-                std::cout << "  ub model: " << out_predicted_totpe << std::endl;
-                std::cout << "  siren model: " << out_siren_totpe << std::endl;
+                std::cout << "PE Totals Vtx[" << ivtx << "]" << std::endl;
+                std::cout << "  observed:    " << obs_total_pe << std::endl;
+                std::cout << "  ub model:    " << ubmodel_totpe_v[ivtx] << std::endl;
+                std::cout << "  siren model: " << siren_totpe_v[ivtx] << std::endl;
+                std::cout << "Sinkhorn divergences Vtx[" << ivtx << "]:" << std::endl;
+                std::cout << "  ub model:    " << ubmodel_sink_v[ivtx] << std::endl;
+                std::cout << "  siren model: " << siren_sink_v[ivtx] << std::endl;
                 
                 // determine dwall variable values and closest vertices for these metrics
 
@@ -659,11 +695,11 @@ int main( int nargs, char** argv )
             int target_ivtx = -1;
             if ( out_has_visible_primary_photon==1 ) {
                 // has a photon energy deposition, so we want to be able to pick a correct vertex
-                if ( out_dwall_true_nuvtx>0 ) {
-                  // true vertex is inside, we use the 
+                if ( out_dwall_true_nuvtx>=0 && min_nuvtx_dist<5.0 ) {
+                  // true vertex is inside, we use the nu vertex as the target 
                   target_ivtx = min_nuvtx_index;
                 }
-                else {
+                else if ( out_dwall_true_nuvtx<0 && min_edep_dist<5.0 ) {
                   // true vertex outside, so we use the closest true vertex
                   target_ivtx = min_edep_index;
                 }
@@ -678,11 +714,11 @@ int main( int nargs, char** argv )
             std::vector<int> tier3_indices;
             for (int ivtx = 0; ivtx < (int)nu_vetoed_v->size(); ivtx++) {
 
-                if ( sink_v[ivtx]<30.0 && fabs(fracerr_v[ivtx])<0.5 && totpe_pred_v[ivtx]>100.0 ) {
+                if ( ubmodel_sink_v[ivtx]<30.0 && fabs(ubmodel_fracerr_v[ivtx])<0.5 && ubmodel_totpe_v[ivtx]>100.0 ) {
                     // tier 1 test: ideal situations
                     tier1_indices.push_back( ivtx );
                 }
-                else if ( fabs(fracerr_v[ivtx])<0.5 || (sink_v[ivtx]<30.0 && totpe_pred_v[ivtx]>100.0) ) {
+                else if ( fabs(ubmodel_fracerr_v[ivtx])<0.5 || (ubmodel_sink_v[ivtx]<30.0 && ubmodel_totpe_v[ivtx]>100.0) ) {
                     // tier 2 test: passes one of the good flash-match metrics
                     tier2_indices.push_back( ivtx );
                 }
@@ -729,9 +765,12 @@ int main( int nargs, char** argv )
                 out_is_tier_selected    = ( ivtx==selected_tier_index ) ? 1 : 0;
                 out_num_event_vertices  = (int)nu_vetoed_v->size();
 
-                out_predicted_totpe     = totpe_pred_v[ivtx];
-                out_sinkhorndiv         = sink_v[ivtx];
-                out_totpefracerr        = fracerr_v[ivtx];
+                out_ubmodel_totpe       = ubmodel_totpe_v[ivtx];
+                out_ubmodel_sinkhorndiv = ubmodel_sink_v[ivtx];
+                out_ubmodel_fracerr     = ubmodel_fracerr_v[ivtx];
+                out_siren_totpe         = siren_totpe_v[ivtx];
+                out_siren_sinkhorndiv   = siren_sink_v[ivtx];
+                out_siren_fracerr       = siren_fracerr_v[ivtx];
                 out_likelihood          = ll_v[ivtx];
                 out_dwall_reco_nuvtx    = dwall_nuvtx_v[ivtx];
                 out_dist2truenuvtx      = dist_nuvtx_v[ivtx];
