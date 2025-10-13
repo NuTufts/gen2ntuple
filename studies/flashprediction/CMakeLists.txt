@@ -60,6 +60,18 @@ find_package( ublarcvapp REQUIRED )
 set( larflow_DIR "$ENV{LARFLOW_LIBDIR}/cmake/larflow")
 find_package( larflow REQUIRED )
 
+set( Torch_DIR $ENV{LIBTORCH_CMAKE_DIR} )
+set(USE_CUDA OFF)
+set(USE_CUDNN OFF)
+set(USE_KINETO OFF)
+set(USE_TENSORRT OFF)
+set(TORCH_CUDA_ARCH_LIST "6.0;6.1;7.0;7.5;8.0;8.6")
+find_package( Torch )
+
+set( flashmatch_dataprep_DIR "$ENV{FLASHMATCH_LIBDIR}/cmake/flashmatch_dataprep" )
+find_package( flashmatch_dataprep REQUIRED )
+
+
 
 # ## Git Submodules
 # find_package(Git QUIET)

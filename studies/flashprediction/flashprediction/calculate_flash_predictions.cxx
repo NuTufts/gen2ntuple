@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
 
     // SIREN model metrics branches (vectors)
     output_tree->Branch("siren_sinkhorn_div_all", &siren_sinkhorn_div_all_v);
-    output_tree->Branch("siren_unbalanced_sinkhorn_div_all", &siren_sinkhorn_div_all_v);
+    output_tree->Branch("siren_unbalanced_sinkhorn_div_all", &siren_unbalanced_sinkhorn_div_all_v);
     output_tree->Branch("siren_pe_diff_all", &siren_pe_diff_all_v);
     output_tree->Branch("siren_pe_fracerr_all", &siren_pe_fracerr_all_v);
 
@@ -349,28 +349,39 @@ int main(int argc, char** argv) {
     // --------------------------------------------------------------
     // torch siren model and c++ implementation of geomloss sinkhorn
 
-    // Create SirenTorchModel and load weights
-    std::cout << "Loading Siren model from: " << siren_model_file << std::endl;
+    // Create SirenTorchModel and load weights (only if run_siren is true)
     flashmatch::SirenTorchModel siren_model;
-    if (verbose) {
-        siren_model.set_verbosity(1);
-    }
-    try {
-        siren_model.load_model_file(siren_model_file);
-    }
-    catch ( std::exception& e ) {
-        std::cerr << "Could not load SIREN Model" << std::endl;
-        std::cerr << e.what() << std::endl;
-        return 0;
+    flashmatch::ModelInputInterface input_interface;
+
+    if (run_siren) {
+        std::cout << "Loading Siren model from: " << siren_model_file << std::endl;
+        if (verbose) {
+            siren_model.set_verbosity(1);
+        }
+        try {
+            siren_model.load_model_file(siren_model_file);
+        }
+        catch ( std::exception& e ) {
+            std::cerr << "Could not load SIREN Model" << std::endl;
+            std::cerr << e.what() << std::endl;
+            return 0;
+        }
+
+        // Set normalization parameters for SIREN model input
+        std::vector<float> planecharge_offset = {0.0, 0.0, 0.0};
+        std::vector<float> planecharge_scale = {50000.0, 50000.0, 50000.0};
+        input_interface.set_planecharge_normalization(planecharge_offset, planecharge_scale);
+        input_interface.set_use_log_normalization(false);
     }
 
-    // Create ModelInputInterface for preparing input tensors
-    flashmatch::ModelInputInterface input_interface;
+    // Create UBFlashSinkDiv for Sinkhorn divergence calculations
+    flashmatch::UBFlashSinkDiv ubsinkdiv_algo;
     
     // --------------------------------------------------------------
     // Initialize MC truth tools (only if MC mode enabled)
     ublarcvapp::mctools::NeutrinoVertex* mc_nu_vertexer = nullptr;
-    larutil::SpaceChargeMicroBooNE* sce = nullptr;
+    larutil::SpaceChargeMicroBooNE* sce = nullptr;  // goes from true position to space-charge modified position
+    
     
     if (is_mc) {
         mc_nu_vertexer = new ublarcvapp::mctools::NeutrinoVertex();
@@ -380,6 +391,10 @@ int main(int argc, char** argv) {
             std::cout << "MC truth tools initialized" << std::endl;
         }
     }
+
+    // Initialize Space-charge correction tool for reconstructed positions
+    larutil::SpaceChargeMicroBooNE* reverse_sce = nullptr; // goes from observed position to space-charge corrected position
+    reverse_sce = new larutil::SpaceChargeMicroBooNE( larutil::SpaceChargeMicroBooNE::kMCC9_Backward );
     
     // Process entries
     for (int ientry = start_entry; ientry < end_entry; ientry++) {
@@ -410,6 +425,7 @@ int main(int argc, char** argv) {
 
         // UB light model metrics
         ub_sinkhorn_div_all_v.clear();
+        ub_unbalanced_sinkhorn_div_all_v.clear();
         ub_pe_diff_all_v.clear();
         ub_pe_fracerr_all_v.clear();
 
@@ -419,6 +435,7 @@ int main(int argc, char** argv) {
 
         // SIREN model metrics
         siren_sinkhorn_div_all_v.clear();
+        siren_unbalanced_sinkhorn_div_all_v.clear();
         siren_pe_diff_all_v.clear();
         siren_pe_fracerr_all_v.clear();
 
@@ -500,10 +517,7 @@ int main(int argc, char** argv) {
             continue;
         }
         
-        std::vector<larcv::Image2D> adc_v;
-        for (size_t p = 0; p < 3; p++) {
-            adc_v.push_back(ev_img->Image2DArray()[p]);
-        }
+        const std::vector<larcv::Image2D>& adc_v = ev_img->as_vector();
         
         // Get observed opflash
         auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, "simpleFlashBeam"));
@@ -551,196 +565,258 @@ int main(int argc, char** argv) {
         if (has_vertices) {
             // Process each vertex candidate
             for (size_t vtx_idx = 0; vtx_idx < nuvetoed_v->size(); vtx_idx++) {
-                
-                const auto& vertex_candidate = nuvetoed_v->at(vtx_idx);
 
-                // fill the reco vertex position
-                // will use this to match to the vertex selected in the ntuple-maker
+                const larflow::reco::NuVertexCandidate& vertex_candidate = nuvetoed_v->at(vtx_idx);
+
+                // Store the reconstructed vertex position
                 reco_vertex_x_v.push_back(vertex_candidate.pos[0]);
                 reco_vertex_y_v.push_back(vertex_candidate.pos[1]);
                 reco_vertex_z_v.push_back(vertex_candidate.pos[2]);
-                
-                // Initialize default values for this vertex
-                pred_total_pe_all_v.push_back(-1.0);
-                pred_total_pe_primary_v.push_back(-1.0);
-                n_tracks_all_v.push_back(0);
-                n_showers_all_v.push_back(0);
-                n_tracks_primary_v.push_back(0);
-                n_showers_primary_v.push_back(0);
-                total_charge_all_v.push_back(0.0);
-                total_photons_all_v.push_back(0.0);
-                total_charge_primary_v.push_back(0.0);
-                total_photons_primary_v.push_back(0.0);
-                
-                prediction_success_all_v.push_back(false);
-                prediction_success_primary_v.push_back(false);
-                
-                // Initialize PMT vectors for this vertex
-                std::vector<float> pmt_pe_all(32, 0.0);
-                std::vector<float> pmt_pe_primary(32, 0.0);
-                pred_pe_per_pmt_all_v.push_back(pmt_pe_all);
-                pred_pe_per_pmt_primary_v.push_back(pmt_pe_primary);
-                
-                // Initialize metric vectors for this vertex
-                std::vector<float> sinkhorn_all(3, -999.0);
-                std::vector<float> sinkhorn_primary(3, -999.0);
-                sinkhorn_div_all_v.push_back(sinkhorn_all);
-                sinkhorn_div_primary_v.push_back(sinkhorn_primary);
-                
-                pe_diff_all_v.push_back(-999.0);
-                pe_diff_primary_v.push_back(-999.0);
-                pe_ratio_all_v.push_back(-999.0);
-                pe_ratio_primary_v.push_back(-999.0);
-                
+
                 // Calculate distance to true vertex (only if MC mode enabled and MC truth available)
                 if (is_mc && has_mc_truth) {
-                    // Calculate 3D Euclidean distance
                     float dx = vertex_candidate.pos[0] - true_vtx_pos.X();
                     float dy = vertex_candidate.pos[1] - true_vtx_pos.Y();
                     float dz = vertex_candidate.pos[2] - true_vtx_pos.Z();
                     float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
                     vtx_dist_to_true_v.push_back(distance);
-                    
+
                     if (verbose) {
                         std::cout << "  Vertex[" << vtx_idx << "] distance to true: " << distance << " cm" << std::endl;
                     }
                 } else if (is_mc) {
-                    // MC mode but no truth available
                     vtx_dist_to_true_v.push_back(-999.0);
                 }
-                
-                // Prediction with all particles
+
+                // ========================================================================
+                // UB Light Model Flash Prediction (using larflow predictor)
+                // ========================================================================
+
+                bool ubpred_success = false;
+                std::vector<float> ubpred_pe_per_pmt(32, 0.0);
+                float ubpred_total_pe = 0.0;
+
                 try {
-                    auto predicted_flash_all = predictor.predictFlash(
+                    auto predicted_flash = predictor.predictFlash(
                         vertex_candidate,
                         adc_v,
                         adc_threshold,
                         true,   // use_trilinear
                         false   // primary_prongs_only = false (all particles)
                     );
-                    
-                    prediction_success_all_v[vtx_idx] = true;
-                    pred_total_pe_all_v[vtx_idx] = predictor.getTotalPredictedPE();
-                    n_tracks_all_v[vtx_idx]      = predictor.getNumTracksProcessed();
-                    n_showers_all_v[vtx_idx]     = predictor.getNumShowersProcessed();
-                    total_charge_all_v[vtx_idx]  = predictor.getTotalChargeCollected();
-                    total_photons_all_v[vtx_idx] = predictor.getTotalPhotonsEmitted();
-                    
-                    // Get per-PMT predictions
-                    const auto& pe_per_pmt_all = predictor.getPredictedPE();
-                    for (int pmt = 0; pmt < 32; pmt++) {
-                        auto it = pe_per_pmt_all.find(pmt);
-                        pred_pe_per_pmt_all_v[vtx_idx][pmt] = (it != pe_per_pmt_all.end()) ? it->second : 0.0;
+
+                    ubpred_success = true;
+                    ubpred_total_pe = predictor.getTotalPredictedPE();
+                    n_tracks_all_v.push_back(predictor.getNumTracksProcessed());
+                    n_showers_all_v.push_back(predictor.getNumShowersProcessed());
+                    total_charge_all_v.push_back(predictor.getTotalChargeCollected());
+                    total_photons_all_v.push_back(predictor.getTotalPhotonsEmitted());
+
+                    // Count primary tracks and showers
+                    int n_primary_tracks = 0;
+                    int n_primary_showers = 0;
+                    for (auto const& issecondary : vertex_candidate.track_isSecondary_v) {
+                        if (issecondary==0) n_primary_tracks++;
                     }
-                    
+                    for (auto const& issecondary : vertex_candidate.shower_isSecondary_v) {
+                        if (issecondary==0) n_primary_showers++;
+                    }
+                    n_primary_tracks_v.push_back(n_primary_tracks);
+                    n_primary_showers_v.push_back(n_primary_showers);
+
+                    // Get per-PMT predictions
+                    const auto& pe_per_pmt_map = predictor.getPredictedPE();
+                    for (int pmt = 0; pmt < 32; pmt++) {
+                        auto it = pe_per_pmt_map.find(pmt);
+                        ubpred_pe_per_pmt[pmt] = (it != pe_per_pmt_map.end()) ? it->second : 0.0;
+                    }
+
                 } catch (const std::exception& e) {
                     if (verbose) {
-                        std::cerr << "Warning: Flash prediction (all) failed for entry " << ientry 
+                        std::cerr << "Warning: UB flash prediction failed for entry " << ientry
                                   << ", vertex " << vtx_idx << ": " << e.what() << std::endl;
                     }
+                    n_tracks_all_v.push_back(0);
+                    n_showers_all_v.push_back(0);
+                    n_primary_tracks_v.push_back(0);
+                    n_primary_showers_v.push_back(0);
+                    total_charge_all_v.push_back(0.0);
+                    total_photons_all_v.push_back(0.0);
                 }
-                
-                // Prediction with primary particles only
-                try {
-                    auto predicted_flash_primary = predictor.predictFlash(
-                        vertex_candidate,
-                        adc_v,
-                        adc_threshold,
-                        true,   // use_trilinear
-                        true    // primary_prongs_only = true
-                    );
-                    
-                    prediction_success_primary_v[vtx_idx] = true;
-                    pred_total_pe_primary_v[vtx_idx] = predictor.getTotalPredictedPE();
-                    n_tracks_primary_v[vtx_idx] = predictor.getNumTracksProcessed();
-                    n_showers_primary_v[vtx_idx] = predictor.getNumShowersProcessed();
-                    total_charge_primary_v[vtx_idx] = predictor.getTotalChargeCollected();
-                    total_photons_primary_v[vtx_idx] = predictor.getTotalPhotonsEmitted();
-                    
-                    // Get per-PMT predictions
-                    const auto& pe_per_pmt_primary = predictor.getPredictedPE();
-                    for (int pmt = 0; pmt < 32; pmt++) {
-                        auto it = pe_per_pmt_primary.find(pmt);
-                        pred_pe_per_pmt_primary_v[vtx_idx][pmt] = (it != pe_per_pmt_primary.end()) ? it->second : 0.0;
+
+                ubpred_total_pe_all_v.push_back(ubpred_total_pe);
+                ubpred_pe_per_pmt_all_v.push_back(ubpred_pe_per_pmt);
+
+                // Calculate UB metrics
+                float ub_pe_diff = ubpred_total_pe - obs_total_pe;
+                float ub_pe_fracerr = (obs_total_pe > 0.0) ? (ubpred_total_pe - obs_total_pe) / obs_total_pe : -999.0;
+                ub_pe_diff_all_v.push_back(ub_pe_diff);
+                ub_pe_fracerr_all_v.push_back(ub_pe_fracerr);
+
+                // Calculate UB Sinkhorn divergences (balanced and unbalanced)
+                std::vector<float> ub_sinkhorn_balanced(1, -999.0);
+                std::vector<float> ub_sinkhorn_unbalanced(1, -999.0);
+
+                if (ubpred_success && has_flash) {
+                    try {
+                        ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, true);
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: UB balanced Sinkhorn failed: " << e.what() << std::endl;
+                        }
                     }
-                    
-                } catch (const std::exception& e) {
-                    if (verbose) {
-                        std::cerr << "Warning: Flash prediction (primary) failed for entry " << ientry 
-                                  << ", vertex " << vtx_idx << ": " << e.what() << std::endl;
-                    }
-                }
-                
-                // Calculate metrics
-                if (prediction_success_all_v[vtx_idx]) {
-                    pe_diff_all_v[vtx_idx] = pred_total_pe_all_v[vtx_idx] - obs_total_pe;
-                    if (obs_total_pe > 0.0) {
-                        pe_ratio_all_v[vtx_idx] = pred_total_pe_all_v[vtx_idx] / obs_total_pe;
-                    } else {
-                        pe_ratio_all_v[vtx_idx] = 0.0;
-                    }
-                    
-                    // Calculate Sinkhorn divergences for all particles
-                    for (int i = 0; i < 3; i++) {
-                        try {
-                            sinkhorn_div_all_v[vtx_idx][i] = sinkhorn_calc.calculateDivergence(
-                                pred_pe_per_pmt_all_v[vtx_idx],
-                                obs_pe_per_pmt,
-                                sinkhorn_regularizations[i],
-                                100,    // max_iterations
-                                1e-6    // tolerance
-                            );
-                        } catch (const std::exception& e) {
-                            if (verbose) {
-                                std::cerr << "Warning: Sinkhorn calculation failed (all, reg=" 
-                                          << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
-                            }
-                            sinkhorn_div_all_v[vtx_idx][i] = -1.0; // Invalid value
+
+                    try {
+                        ub_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, false);
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: UB unbalanced Sinkhorn failed: " << e.what() << std::endl;
                         }
                     }
                 }
-                
-                if (prediction_success_primary_v[vtx_idx]) {
-                    pe_diff_primary_v[vtx_idx] = pred_total_pe_primary_v[vtx_idx] - obs_total_pe;
-                    if (obs_total_pe > 0.0) {
-                        pe_ratio_primary_v[vtx_idx] = pred_total_pe_primary_v[vtx_idx] / obs_total_pe;
-                    } else {
-                        pe_ratio_primary_v[vtx_idx] = 0.0;
-                    }
-                    
-                    // Calculate Sinkhorn divergences for primary particles
-                    for (int i = 0; i < 3; i++) {
-                        try {
-                            sinkhorn_div_primary_v[vtx_idx][i] = sinkhorn_calc.calculateDivergence(
-                                pred_pe_per_pmt_primary_v[vtx_idx],
-                                obs_pe_per_pmt,
-                                sinkhorn_regularizations[i],
-                                100,    // max_iterations
-                                1e-6    // tolerance
-                            );
-                        } catch (const std::exception& e) {
-                            if (verbose) {
-                                std::cerr << "Warning: Sinkhorn calculation failed (primary, reg=" 
-                                          << sinkhorn_regularizations[i] << "): " << e.what() << std::endl;
+
+                ub_sinkhorn_div_all_v.push_back(ub_sinkhorn_balanced);
+                ub_unbalanced_sinkhorn_div_all_v.push_back(ub_sinkhorn_unbalanced);
+
+                // ========================================================================
+                // SIREN Model Flash Prediction
+                // ========================================================================
+
+                bool siren_success = false;
+                std::vector<float> siren_pe_per_pmt(32, 0.0);
+                float siren_total_pe = 0.0;
+
+                if (run_siren) {
+                    try {
+                        // Get 3D points and charge from the vertex candidate's track and shower collections
+                        std::vector<std::vector<float>> voxel_positions;
+                        std::vector<std::vector<float>> voxel_pixelcoords;
+
+                        // Extract hits from tracks and showers
+                        std::vector< const std::vector<larlite::larflowcluster>* > phitclusters = {
+                            &vertex_candidate.track_hitcluster_v,
+                            &vertex_candidate.shower_v
+                        };
+
+                        for ( auto const& phitcluster : phitclusters ) {
+                            for (auto const& trackcluster : *phitcluster ) {
+                                for (size_t ipt = 0; ipt < trackcluster.size(); ipt++) {
+                                    auto const& lfhit = trackcluster.at(ipt);
+
+                                    // these are the 3D positions in the detector
+                                    std::vector<float> pos = { lfhit[0], lfhit[1], lfhit[2] };
+
+                                    // we have to space charge correct the positions
+                                    bool applied = false;
+                                    std::vector<double> pos_sce = reverse_sce->ApplySpaceChargeEffect( lfhit[0], lfhit[1], lfhit[2], applied );
+                                    if ( !applied ) {
+                                        // if a correction was not applied, this hit is not inside the TPC
+                                        // we can throw it out.
+                                        continue;
+                                    }
+                                    std::vector<float> fpos_sce(3,0);
+                                    for (size_t v=0; v<3; v++)
+                                        fpos_sce[v] = pos_sce[v];
+                                    voxel_positions.push_back( fpos_sce );
+
+                                    // these are the image coordinates from which they were projected
+                                    std::vector<float> pixelcoords(4,0); // (tick, U,V,Y)
+                                    pixelcoords[0] = lfhit.tick;
+                                    pixelcoords[1] = lfhit.targetwire[0];
+                                    pixelcoords[2] = lfhit.targetwire[1];
+                                    pixelcoords[3] = lfhit.targetwire[2];
+
+                                    voxel_pixelcoords.push_back(pixelcoords);
+
+                                }
                             }
-                            sinkhorn_div_primary_v[vtx_idx][i] = -1.0; // Invalid value
+                        }
+
+                        int num_voxels = voxel_positions.size();
+
+                        if (num_voxels > 0) {
+                            // Prepare input tensors for SIREN model
+                            torch::Tensor voxel_features_t;
+                            torch::Tensor voxel_charge_t; 
+
+                            input_interface.prepare_input_tensor( 
+                                voxel_positions, 
+                                voxel_pixelcoords,
+                                adc_v,
+                                voxel_features_t,
+                                voxel_charge_t
+                            );
+
+                            // Run SIREN model
+                            std::vector<float> siren_output = siren_model.predict_pe(voxel_features_t, voxel_charge_t);
+                            siren_pe_per_pmt.resize(32,0);
+                            for (size_t ipmt=0; ipmt<32; ipmt++) {
+                                siren_pe_per_pmt[ipmt] = siren_output[ipmt]*siren_pe_scale;
+                            }
+
+                            // Calculate total PE
+                            for (int i = 0; i < 32; i++) {
+                                siren_total_pe += siren_pe_per_pmt[i];
+                            }
+
+                            siren_success = true;
+                        }// if num_voxels = 0
+
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: SIREN prediction failed for entry " << ientry
+                                      << ", vertex " << vtx_idx << ": " << e.what() << std::endl;
+                        }
+                    }
+
+                }// if run_siren flag is True
+
+                siren_total_pe_all_v.push_back(siren_total_pe);
+                siren_pe_per_pmt_all_v.push_back(siren_pe_per_pmt);
+
+                // Calculate SIREN metrics
+                float siren_pe_diff = siren_total_pe - obs_total_pe;
+                float siren_pe_fracerr = (obs_total_pe > 0.0) ? (siren_total_pe - obs_total_pe) / obs_total_pe : -999.0;
+                siren_pe_diff_all_v.push_back(siren_pe_diff);
+                siren_pe_fracerr_all_v.push_back(siren_pe_fracerr);
+
+                // Calculate SIREN Sinkhorn divergences (balanced and unbalanced)
+                std::vector<float> siren_sinkhorn_balanced(1, -999.0);
+                std::vector<float> siren_sinkhorn_unbalanced(1, -999.0);
+
+                if (siren_success && has_flash) {
+                    try {
+                        siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, true);
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: SIREN balanced Sinkhorn failed: " << e.what() << std::endl;
+                        }
+                    }
+
+                    try {
+                        siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, false);
+                    } catch (const std::exception& e) {
+                        if (verbose) {
+                            std::cerr << "Warning: SIREN unbalanced Sinkhorn failed: " << e.what() << std::endl;
                         }
                     }
                 }
-                
+
+                siren_sinkhorn_div_all_v.push_back(siren_sinkhorn_balanced);
+                siren_unbalanced_sinkhorn_div_all_v.push_back(siren_sinkhorn_unbalanced);
+
+                // Verbose output
                 if (verbose) {
-                    std::cout << "  Vertex[" << vtx_idx << "] pred_PE(all)=" << pred_total_pe_all_v[vtx_idx] 
-                              << " pred_PE(primary)=" << pred_total_pe_primary_v[vtx_idx];
+                    std::cout << "  Vertex[" << vtx_idx << "]";
+                    std::cout << " UB_PE=" << ubpred_total_pe;
+                    if (run_siren) std::cout << " SIREN_PE=" << siren_total_pe;
+                    std::cout << " OBS_PE=" << obs_total_pe;
                     if (is_mc && has_mc_truth) {
                         std::cout << " dist_to_true=" << vtx_dist_to_true_v[vtx_idx] << " cm";
                     }
                     std::cout << std::endl;
                 }
-                
-                // TODO: RUN SIREN MODEL
 
-                // TODO: calc balanced and unbalanced Sinkhorn Divergence for SIRENT predictions
-                
             } // end loop over vertices
         } // end if has_vertices
         
