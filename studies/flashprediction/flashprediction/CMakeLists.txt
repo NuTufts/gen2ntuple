@@ -9,6 +9,7 @@ include_directories(
   $ENV{LARLITE_COREDIR}
   $ENV{LARFLOW_INCDIR}
   $ENV{UBLARCVAPP_INCDIR}
+  ${FLASHMATCH_DATAPREP_INCLUDE_DIR}
 )
 
 # Add executables
@@ -22,6 +23,7 @@ target_link_libraries(calculate_flash_predictions
   -L$ENV{LARLITE_LIBDIR} -llarlite_Base -llarlite_DataFormat -llarlite_LArUtil
   -L$ENV{LARFLOW_LIBDIR} -lLArFlow_Reco -lLArFlow_SCBoundary -lLArFlow_RecoUtils
   -L$ENV{UBLARCVAPP_LIBDIR} -lLArCVApp_ubdllee -lLArCVApp_UBPhotonLib -lLArCVApp_ParticleToPixelUtils -lLArCVApp_MCTools
+  flashmatch::flashmatch_dataprep
 )
 
 ## Link libraries for run_flashprediction  

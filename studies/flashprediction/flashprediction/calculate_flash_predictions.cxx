@@ -35,7 +35,6 @@
 // larflow
 #include "larflow/Reco/NuVertexCandidate.h"
 #include "larflow/Reco/NuVertexFlashPrediction.h"
-#include "larflow/Reco/SinkhornFlashDivergence.h"
 
 // ublarcvapp (for MC truth)
 #include "ublarcvapp/MCTools/NeutrinoVertex.h"
@@ -45,6 +44,16 @@
 
 // larutil (for SCE correction)
 #include "LArUtil/SpaceChargeMicroBooNE.h"
+
+// Flashmatch library to be able to run siren model and calculate sinkhorn divergences
+// Torch headers
+#include <torch/torch.h>
+
+// Project headers
+#include "flashmatch_dataprep/SirenTorchModel.h"
+#include "flashmatch_dataprep/ModelInputInterface.h"
+#include "flashmatch_dataprep/UnbalancedSinkhornDivergence.h"
+#include "flashmatch_dataprep/UBFlashSinkDiv.h"
 
 // ROOT (for TVector3)
 #include "TVector3.h"
@@ -62,7 +71,9 @@ void printUsage() {
     std::cout << "  -v, --verbose               Enable verbose output" << std::endl;
     std::cout << "  -tb, --tickbackward         Use tick backward direction" << std::endl;
     std::cout << "  -mc, --mc                   Enable MC mode (calculate distance to true vertex)" << std::endl;
+    std::cout << "  --siren-model-file <file>   Provide path to SIREN model file and activate SIREN flash prediction" << std::endl;
     std::cout << "  -h, --help                  Show this help message" << std::endl;
+    
 }
 
 int main(int argc, char** argv) {
@@ -71,12 +82,16 @@ int main(int argc, char** argv) {
     std::string dlmerged_file = "";
     std::string reco_file = "";
     std::string output_file = "";
+    std::string siren_model_file = "";
     int num_entries = -1;
     int start_entry = 0;
     float adc_threshold = 10.0;
     bool verbose = false;
     bool tickbackward = false;
     bool is_mc = false;
+    bool run_siren = false;
+    float siren_pe_scale = 3.0;
+    const int max_vertices = 5;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -108,6 +123,10 @@ int main(int argc, char** argv) {
         else if (arg == "-mc" || arg == "--mc") {
             is_mc = true;
         }
+        else if (arg == "--siren-model-file") {
+            run_siren = true;
+            siren_model_file = argv[++i];
+        }
         else if (arg == "-h" || arg == "--help") {
             printUsage();
             return 0;
@@ -120,6 +139,12 @@ int main(int argc, char** argv) {
         printUsage();
         return 1;
     }
+
+    if ( run_siren && siren_model_file.empty()) {
+        std::cerr << "Error: SIREN model file provided but is empty." << std::endl;
+        printUsage();
+        return 1;
+    }
     
     std::cout << "Flash Prediction Calculator (Vectorized)" << std::endl;
     std::cout << "=========================================" << std::endl;
@@ -128,6 +153,12 @@ int main(int argc, char** argv) {
     std::cout << "Output file: " << output_file << std::endl;
     std::cout << "ADC threshold: " << adc_threshold << std::endl;
     std::cout << "MC mode: " << (is_mc ? "enabled" : "disabled") << std::endl;
+    if ( run_siren ) {
+        std::cout << "Siren model file: " << siren_model_file << std::endl;
+    }
+    else {
+        std::cout << "Not running Siren Model" << std::endl;
+    }
     
     // Open input files
     // 1. Open reco file with KPSRecoManagerTree
@@ -177,9 +208,13 @@ int main(int argc, char** argv) {
     
     // Create output file and tree
     TFile* output_tfile = TFile::Open(output_file.c_str(), "RECREATE");
+
+    // We ave an entry per event in this tree
     TTree* output_tree = new TTree("FlashPredictionTree", "Flash predictions for neutrino vertices");
     
-    // Define vector branches to store all vertices per event
+    // --------------------------------------------------------------------
+    // Variables to store in the TTree Branches
+
     // Basic event info
     int entry, run, subrun, event;
     int n_vertices;
@@ -190,100 +225,103 @@ int main(int argc, char** argv) {
     std::vector<float> obs_pe_per_pmt;
     
     // Vectors for vertex-specific predictions (all particles)
-    std::vector<float> reco_vertex_x_v;
-    std::vector<float> reco_vertex_y_v;
-    std::vector<float> reco_vertex_z_v;
-    std::vector<float> pred_total_pe_all_v;
-    std::vector<std::vector<float>> pred_pe_per_pmt_all_v; // 2D vector: [vertex][pmt]
-    std::vector<int> n_tracks_all_v;
-    std::vector<int> n_showers_all_v;
+    std::vector<float> reco_vertex_x_v; // reconstructed vertex x-position
+    std::vector<float> reco_vertex_y_v; // reconstructed vertex y-position
+    std::vector<float> reco_vertex_z_v; // reconstructed vertex z-position
+    std::vector<int>   n_tracks_all_v;  // number of tracks in the vertex
+    std::vector<int>   n_showers_all_v; // number of showers in the vertex
+    std::vector<int>   n_primary_tracks_v;  // number of primary tracks in the vertex
+    std::vector<int>   n_primary_showers_v; // number of primary showers in the vertex
     std::vector<float> total_charge_all_v;
     std::vector<float> total_photons_all_v;
+
+    std::vector<float>              ubpred_total_pe_all_v;   // ub light model prediction, total pe
+    std::vector<std::vector<float>> ubpred_pe_per_pmt_all_v; // ub light model pe per pmt prediction: [vertex][pmt]
+
+    std::vector<float>              siren_total_pe_all_v; // ub light model prediction, total pe
+    std::vector<std::vector<float>> siren_pe_per_pmt_all_v; // ub light model pe per pmt prediction: [vertex][pmt]
     
-    // Vectors for vertex-specific predictions (primary particles only)
-    std::vector<float> pred_total_pe_primary_v;
-    std::vector<std::vector<float>> pred_pe_per_pmt_primary_v; // 2D vector: [vertex][pmt]
-    std::vector<int> n_tracks_primary_v;
-    std::vector<int> n_showers_primary_v;
-    std::vector<float> total_charge_primary_v;
-    std::vector<float> total_photons_primary_v;
-    
-    // Metrics vectors
-    std::vector<std::vector<float>> sinkhorn_div_all_v; // 2D vector: [vertex][reg_param]
-    std::vector<std::vector<float>> sinkhorn_div_primary_v; // 2D vector: [vertex][reg_param]
-    std::vector<float> pe_diff_all_v;
-    std::vector<float> pe_diff_primary_v;
-    std::vector<float> pe_ratio_all_v;
-    std::vector<float> pe_ratio_primary_v;
-    
-    // Status vectors
-    std::vector<bool> prediction_success_all_v;
-    std::vector<bool> prediction_success_primary_v;
+    // // Metrics vectors for UB light model
+    std::vector<std::vector<float>> ub_sinkhorn_div_all_v;             // balanced sinkhorn divergance: [vertex][reg_param]
+    std::vector<std::vector<float>> ub_unbalanced_sinkhorn_div_all_v;  // unbalanced sinkhorn divergence: [vertex][reg_param]
+    std::vector<float>              ub_pe_diff_all_v;
+    std::vector<float>              ub_pe_fracerr_all_v;
+
+    // Metrics vectors for siren light model
+    std::vector<std::vector<float>> siren_sinkhorn_div_all_v;            // balanced sinkhorn divergence: [vertex][reg_param]
+    std::vector<std::vector<float>> siren_unbalanced_sinkhorn_div_all_v; // unbalanced sinkhorn divergence: [vertex][reg_param]
+    std::vector<float>              siren_pe_diff_all_v;
+    std::vector<float>              siren_pe_fracerr_all_v;
     
     // MC truth vectors (only used if is_mc is true)
     std::vector<float> vtx_dist_to_true_v;
     float true_vtx_x, true_vtx_y, true_vtx_z;
     bool has_mc_truth;
     
+    // -----------------------------------------------------------------------------
     // Set up branches
+
     // Event-level branches
     output_tree->Branch("entry", &entry, "entry/I");
     output_tree->Branch("run", &run, "run/I");
     output_tree->Branch("subrun", &subrun, "subrun/I");
     output_tree->Branch("event", &event, "event/I");
-    output_tree->Branch("n_vertices", &n_vertices, "n_vertices/I");
+    output_tree->Branch("n_vertices",   &n_vertices,   "n_vertices/I");
     output_tree->Branch("has_vertices", &has_vertices, "has_vertices/O");
-    output_tree->Branch("has_flash", &has_flash, "has_flash/O");
-    
+    output_tree->Branch("has_flash",    &has_flash,    "has_flash/O");
+
     // Observed flash branches (event-level)
-    output_tree->Branch("obs_total_pe", &obs_total_pe, "obs_total_pe/F");
-    output_tree->Branch("obs_time", &obs_time, "obs_time/F");
+    output_tree->Branch("obs_total_pe",   &obs_total_pe,    "obs_total_pe/F");
+    output_tree->Branch("obs_time",       &obs_time,        "obs_time/F");
     output_tree->Branch("obs_pe_per_pmt", &obs_pe_per_pmt);
-    
-    // Prediction branches (vectors)
+
+    // Reconstructed vertex position branches (vectors)
     output_tree->Branch("reco_vertex_x", &reco_vertex_x_v);
     output_tree->Branch("reco_vertex_y", &reco_vertex_y_v);
     output_tree->Branch("reco_vertex_z", &reco_vertex_z_v);
-    output_tree->Branch("pred_total_pe_all", &pred_total_pe_all_v);
-    output_tree->Branch("pred_pe_per_pmt_all", &pred_pe_per_pmt_all_v);
+
+    // Particle count branches for all particles (vectors)
     output_tree->Branch("n_tracks_all", &n_tracks_all_v);
     output_tree->Branch("n_showers_all", &n_showers_all_v);
+    output_tree->Branch("n_primary_tracks", &n_primary_tracks_v);
+    output_tree->Branch("n_primary_showers", &n_primary_showers_v);
     output_tree->Branch("total_charge_all", &total_charge_all_v);
     output_tree->Branch("total_photons_all", &total_photons_all_v);
+
+    // UB light model prediction branches (vectors)
+    output_tree->Branch("ubpred_total_pe_all", &ubpred_total_pe_all_v);
+    output_tree->Branch("ubpred_pe_per_pmt_all", &ubpred_pe_per_pmt_all_v);
+
+    // UB light model metrics branches (vectors)
+    output_tree->Branch("ub_sinkhorn_div_all", &ub_sinkhorn_div_all_v);
+    output_tree->Branch("ub_unbalanced_sinkhorn_div_all", &ub_unbalanced_sinkhorn_div_all_v);
+    output_tree->Branch("ub_pe_diff_all", &ub_pe_diff_all_v);
+    output_tree->Branch("ub_pe_fracerr_all", &ub_pe_fracerr_all_v);
+
+    // SIREN model prediction branches (vectors)
+    output_tree->Branch("siren_total_pe_all", &siren_total_pe_all_v);
+    output_tree->Branch("siren_pe_per_pmt_all", &siren_pe_per_pmt_all_v);
+
+    // SIREN model metrics branches (vectors)
+    output_tree->Branch("siren_sinkhorn_div_all", &siren_sinkhorn_div_all_v);
+    output_tree->Branch("siren_unbalanced_sinkhorn_div_all", &siren_sinkhorn_div_all_v);
+    output_tree->Branch("siren_pe_diff_all", &siren_pe_diff_all_v);
+    output_tree->Branch("siren_pe_fracerr_all", &siren_pe_fracerr_all_v);
+
+    // MC truth branches (will fill with dummy values if no MC truth)
+    output_tree->Branch("vtx_dist_to_true", &vtx_dist_to_true_v);
+    output_tree->Branch("true_vtx_x", &true_vtx_x, "true_vtx_x/F");
+    output_tree->Branch("true_vtx_y", &true_vtx_y, "true_vtx_y/F");
+    output_tree->Branch("true_vtx_z", &true_vtx_z, "true_vtx_z/F");
+    output_tree->Branch("has_mc_truth", &has_mc_truth, "has_mc_truth/O");
+
+
+    // -----------------------------------------------------------------------------
     
-    output_tree->Branch("pred_total_pe_primary", &pred_total_pe_primary_v);
-    output_tree->Branch("pred_pe_per_pmt_primary", &pred_pe_per_pmt_primary_v);
-    output_tree->Branch("n_tracks_primary", &n_tracks_primary_v);
-    output_tree->Branch("n_showers_primary", &n_showers_primary_v);
-    output_tree->Branch("total_charge_primary", &total_charge_primary_v);
-    output_tree->Branch("total_photons_primary", &total_photons_primary_v);
-    
-    // Metrics branches (vectors)
-    output_tree->Branch("sinkhorn_div_all", &sinkhorn_div_all_v);
-    output_tree->Branch("sinkhorn_div_primary", &sinkhorn_div_primary_v);
-    output_tree->Branch("pe_diff_all", &pe_diff_all_v);
-    output_tree->Branch("pe_diff_primary", &pe_diff_primary_v);
-    output_tree->Branch("pe_ratio_all", &pe_ratio_all_v);
-    output_tree->Branch("pe_ratio_primary", &pe_ratio_primary_v);
-    
-    // Status branches (vectors)
-    output_tree->Branch("prediction_success_all", &prediction_success_all_v);
-    output_tree->Branch("prediction_success_primary", &prediction_success_primary_v);
-    
-    // MC truth branches (only if MC mode enabled)
-    if (is_mc) {
-        output_tree->Branch("vtx_dist_to_true", &vtx_dist_to_true_v);
-        output_tree->Branch("true_vtx_x", &true_vtx_x, "true_vtx_x/F");
-        output_tree->Branch("true_vtx_y", &true_vtx_y, "true_vtx_y/F");
-        output_tree->Branch("true_vtx_z", &true_vtx_z, "true_vtx_z/F");
-        output_tree->Branch("has_mc_truth", &has_mc_truth, "has_mc_truth/O");
-    }
-    
+    // --------------------------------------------------------------
+    // UB light model and larflow::sinkhorn
     // Initialize flash predictor and Sinkhorn calculator
     larflow::reco::NuVertexFlashPrediction predictor;
-    larflow::reco::SinkhornFlashDivergence sinkhorn_calc;
-    //if (verbose)
-    //   sinkhorn_calc.set_verbosity(larcv::msg::kINFO);
     
     // Configure flash predictor with standard parameters
     predictor.setChargeToPhotonParams(
@@ -305,9 +343,31 @@ int main(int argc, char** argv) {
         3       // drow
     );
     
-    // Regularization parameters for Sinkhorn divergence
+    // Regularization parameters for Sinkhorn divergence (dampening)
     float sinkhorn_regularizations[3] = {0.1, 1.0, 10.0};
+
+    // --------------------------------------------------------------
+    // torch siren model and c++ implementation of geomloss sinkhorn
+
+    // Create SirenTorchModel and load weights
+    std::cout << "Loading Siren model from: " << siren_model_file << std::endl;
+    flashmatch::SirenTorchModel siren_model;
+    if (verbose) {
+        siren_model.set_verbosity(1);
+    }
+    try {
+        siren_model.load_model_file(siren_model_file);
+    }
+    catch ( std::exception& e ) {
+        std::cerr << "Could not load SIREN Model" << std::endl;
+        std::cerr << e.what() << std::endl;
+        return 0;
+    }
+
+    // Create ModelInputInterface for preparing input tensors
+    flashmatch::ModelInputInterface input_interface;
     
+    // --------------------------------------------------------------
     // Initialize MC truth tools (only if MC mode enabled)
     ublarcvapp::mctools::NeutrinoVertex* mc_nu_vertexer = nullptr;
     larutil::SpaceChargeMicroBooNE* sce = nullptr;
@@ -328,38 +388,45 @@ int main(int argc, char** argv) {
             std::cout << "Processing entry " << ientry << " / " << end_entry - 1 << std::endl;
         }
         
+        // ------------------------------------------------
         // Clear all vectors for this event
-        pred_total_pe_all_v.clear();
-        pred_pe_per_pmt_all_v.clear();
-        n_tracks_all_v.clear();
-        n_showers_all_v.clear();
-        total_charge_all_v.clear();
-        total_photons_all_v.clear();
-        
+
+        // Reconstructed vertex positions
         reco_vertex_x_v.clear();
         reco_vertex_y_v.clear();
         reco_vertex_z_v.clear();
-        pred_total_pe_primary_v.clear();
-        pred_pe_per_pmt_primary_v.clear();
-        n_tracks_primary_v.clear();
-        n_showers_primary_v.clear();
-        total_charge_primary_v.clear();
-        total_photons_primary_v.clear();
+
+        // Particle counts
+        n_tracks_all_v.clear();
+        n_showers_all_v.clear();
+        n_primary_tracks_v.clear();
+        n_primary_showers_v.clear();
+        total_charge_all_v.clear();
+        total_photons_all_v.clear();
+
+        // UB light model predictions
+        ubpred_total_pe_all_v.clear();
+        ubpred_pe_per_pmt_all_v.clear();
+
+        // UB light model metrics
+        ub_sinkhorn_div_all_v.clear();
+        ub_pe_diff_all_v.clear();
+        ub_pe_fracerr_all_v.clear();
+
+        // SIREN model predictions
+        siren_total_pe_all_v.clear();
+        siren_pe_per_pmt_all_v.clear();
+
+        // SIREN model metrics
+        siren_sinkhorn_div_all_v.clear();
+        siren_pe_diff_all_v.clear();
+        siren_pe_fracerr_all_v.clear();
+
+        // MC truth
+        vtx_dist_to_true_v.clear();
+
+        // ------------------------------------------------
         
-        sinkhorn_div_all_v.clear();
-        sinkhorn_div_primary_v.clear();
-        pe_diff_all_v.clear();
-        pe_diff_primary_v.clear();
-        pe_ratio_all_v.clear();
-        pe_ratio_primary_v.clear();
-        
-        prediction_success_all_v.clear();
-        prediction_success_primary_v.clear();
-        
-        // Clear MC truth vectors (only if MC mode enabled)
-        if (is_mc) {
-            vtx_dist_to_true_v.clear();
-        }
         
         obs_pe_per_pmt.clear();
         obs_pe_per_pmt.resize(32, 0.0);
@@ -554,9 +621,9 @@ int main(int argc, char** argv) {
                     
                     prediction_success_all_v[vtx_idx] = true;
                     pred_total_pe_all_v[vtx_idx] = predictor.getTotalPredictedPE();
-                    n_tracks_all_v[vtx_idx] = predictor.getNumTracksProcessed();
-                    n_showers_all_v[vtx_idx] = predictor.getNumShowersProcessed();
-                    total_charge_all_v[vtx_idx] = predictor.getTotalChargeCollected();
+                    n_tracks_all_v[vtx_idx]      = predictor.getNumTracksProcessed();
+                    n_showers_all_v[vtx_idx]     = predictor.getNumShowersProcessed();
+                    total_charge_all_v[vtx_idx]  = predictor.getTotalChargeCollected();
                     total_photons_all_v[vtx_idx] = predictor.getTotalPhotonsEmitted();
                     
                     // Get per-PMT predictions
@@ -669,6 +736,10 @@ int main(int argc, char** argv) {
                     }
                     std::cout << std::endl;
                 }
+                
+                // TODO: RUN SIREN MODEL
+
+                // TODO: calc balanced and unbalanced Sinkhorn Divergence for SIRENT predictions
                 
             } // end loop over vertices
         } // end if has_vertices
