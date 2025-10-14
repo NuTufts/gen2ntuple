@@ -5,6 +5,8 @@ rt.gStyle.SetOptStat(0)
 rfile = rt.TFile(sys.argv[1])
 ttree = rfile.Get("FlashPredictionTree")
 
+scale_factor=1.0
+
 nentries = ttree.GetEntries()
 
 c = rt.TCanvas("c","c",800,600)
@@ -36,7 +38,7 @@ for ientry in range(nentries):
         hublm.Reset()
         for ipmt in range(32):
             hublm.SetBinContent(  ipmt+1, ttree.ubpred_pe_per_pmt_all.at(ivtx).at(ipmt) )
-            hsiren.SetBinContent( ipmt+1, ttree.siren_pe_per_pmt_all.at(ivtx).at(ipmt)*3.0 )
+            hsiren.SetBinContent( ipmt+1, ttree.siren_pe_per_pmt_all.at(ivtx).at(ipmt)*scale_factor )
 
 
         hmax = hobs

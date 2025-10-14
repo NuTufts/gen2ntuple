@@ -162,9 +162,13 @@ int main(int argc, char** argv) {
             opflash_treename = "simpleFlashBeam::DataRecoStage1Test";
         else if ( dataset_type=="run3overlay" )
             opflash_treename = "simpleFlashBeam::OverlayStage1OpticalDLrerun";
+        else if ( dataset_type=="run3bnb1e19")
+            opflash_treename = "simpleFlashBeam";
         else {
             std::cerr << "Unrecognized dataset_type. Options." << std::endl;
             std::cerr << "  run1bnb5e19: Run 1 Open Data sample. [simpleFlashBeam::OverlayStage1OpticalDLrerun]" << std::endl;
+            std::cerr << "  run3bnb1e19: Run 3 Open Data sample. [simpleFlashBeam]" << std::endl;
+            std::cerr << "  run3overlay: Run 3 BNB Nu and intrinsic overlay MC sample. [simpleFlashBeam::OverlayStage1OpticalDLrerun]" << std::endl;
             return 1;
         }
     }
