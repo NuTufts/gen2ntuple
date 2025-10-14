@@ -64,6 +64,7 @@ void printUsage() {
     std::cout << "  -d, --dlmerged     <file>    Input dlmerged ROOT file (larcv format)" << std::endl;
     std::cout << "  -r, --reco         <file>    Input reco file with KPSRecoManagerTree" << std::endl;
     std::cout << "  -o, --output       <file>    Output ROOT file for flash predictions" << std::endl;
+    std::cout << "  --dataset-type     <name>    Dataset type. Will set opflash tree name. [run1bnb5e19,run1overlay,run3overlay,etc..]" << std::endl;
     std::cout << "\nOptional:" << std::endl;
     std::cout << "  -n, --num-entries  <N>       Number of entries to process (default: all)" << std::endl;
     std::cout << "  -s, --start-entry  <N>       Starting entry (default: 0)" << std::endl;
@@ -73,6 +74,7 @@ void printUsage() {
     std::cout << "  -mc, --mc                   Enable MC mode (calculate distance to true vertex)" << std::endl;
     std::cout << "  --siren-model-file <file>   Provide path to SIREN model file and activate SIREN flash prediction" << std::endl;
     std::cout << "  -h, --help                  Show this help message" << std::endl;
+
     
 }
 
@@ -83,6 +85,7 @@ int main(int argc, char** argv) {
     std::string reco_file = "";
     std::string output_file = "";
     std::string siren_model_file = "";
+    std::string dataset_type = "";
     int num_entries = -1;
     int start_entry = 0;
     float adc_threshold = 10.0;
@@ -127,6 +130,9 @@ int main(int argc, char** argv) {
             run_siren = true;
             siren_model_file = argv[++i];
         }
+        else if (arg == "--dataset-type"){
+            dataset_type = argv[++i];
+        }
         else if (arg == "-h" || arg == "--help") {
             printUsage();
             return 0;
@@ -145,6 +151,23 @@ int main(int argc, char** argv) {
         printUsage();
         return 1;
     }
+
+    // use dataset type to set opflash tree name
+    std::string opflash_treename = "";
+    if (dataset_type.empty()) {
+        std::cerr << "Error: dataset type needs to be specified" << std::endl;
+    }
+    else {
+        if ( dataset_type=="run1bnb5e19")
+            opflash_treename = "simpleFlashBeam::DataRecoStage1Test";
+        else if ( dataset_type=="run3overlay" )
+            opflash_treename = "simpleFlashBeam::OverlayStage1OpticalDLrerun";
+        else {
+            std::cerr << "Unrecognized dataset_type. Options." << std::endl;
+            std::cerr << "  run1bnb5e19: Run 1 Open Data sample. [simpleFlashBeam::OverlayStage1OpticalDLrerun]" << std::endl;
+            return 1;
+        }
+    }
     
     std::cout << "Flash Prediction Calculator (Vectorized)" << std::endl;
     std::cout << "=========================================" << std::endl;
@@ -152,6 +175,8 @@ int main(int argc, char** argv) {
     std::cout << "Reco file: " << reco_file << std::endl;
     std::cout << "Output file: " << output_file << std::endl;
     std::cout << "ADC threshold: " << adc_threshold << std::endl;
+    std::cout << "Dataset Type: " << dataset_type << std::endl;
+    std::cout << "  opflash treename: " << opflash_treename << std::endl;
     std::cout << "MC mode: " << (is_mc ? "enabled" : "disabled") << std::endl;
     if ( run_siren ) {
         std::cout << "Siren model file: " << siren_model_file << std::endl;
@@ -183,6 +208,7 @@ int main(int argc, char** argv) {
     if (tickbackward)
         tick_direction = larcv::IOManager::kTickBackward;
     larcv::IOManager ioman(larcv::IOManager::kREAD, "ioman", tick_direction);
+    ioman.set_verbosity( larcv::msg::kINFO );
     ioman.add_in_file(dlmerged_file);
     if (tickbackward)
         ioman.reverse_all_products();
@@ -190,6 +216,7 @@ int main(int argc, char** argv) {
     
     // 3. Set up larlite storage manager for opflash
     larlite::storage_manager ioll(larlite::storage_manager::kREAD);
+    ioll.set_verbosity( larlite::msg::kINFO );
     ioll.add_in_filename(dlmerged_file);
     if (!ioll.open()) {
         std::cerr << "Error: Cannot open dlmerged file for larlite: " << dlmerged_file << std::endl;
@@ -289,7 +316,7 @@ int main(int argc, char** argv) {
     output_tree->Branch("total_photons_all", &total_photons_all_v);
 
     // UB light model prediction branches (vectors)
-    output_tree->Branch("ubpred_total_pe_all", &ubpred_total_pe_all_v);
+    output_tree->Branch("ubpred_total_pe_all",   &ubpred_total_pe_all_v);
     output_tree->Branch("ubpred_pe_per_pmt_all", &ubpred_pe_per_pmt_all_v);
 
     // UB light model metrics branches (vectors)
@@ -322,6 +349,8 @@ int main(int argc, char** argv) {
     // UB light model and larflow::sinkhorn
     // Initialize flash predictor and Sinkhorn calculator
     larflow::reco::NuVertexFlashPrediction predictor;
+    if (verbose)
+        predictor.set_verbosity( larcv::msg::kDEBUG );
     
     // Configure flash predictor with standard parameters
     predictor.setChargeToPhotonParams(
@@ -520,21 +549,31 @@ int main(int argc, char** argv) {
         const std::vector<larcv::Image2D>& adc_v = ev_img->as_vector();
         
         // Get observed opflash
-        auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, "simpleFlashBeam"));
+        auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, opflash_treename));
         
         has_flash = (ev_opflash && ev_opflash->size() > 0);
         
         if (has_flash) {
-            // Use the first flash (highest PE)
-            const auto& flash = ev_opflash->at(0);
-            obs_total_pe = flash.TotalPE();
-            obs_time = flash.Time();
-            
-            for (int pmt = 0; pmt < 32; pmt++) {
-                obs_pe_per_pmt[pmt] = flash.PE(pmt);
+            // Use the first flash in the beam window
+            std::cout << "Number of opflashes: " << ev_opflash->size() << std::endl;
+            has_flash = false;
+            obs_time = -1.0;
+            obs_total_pe = 0.0;
+            for (auto const& flash : *ev_opflash) {
+                float flashtime = flash.Time();
+                std::cout << "  flash usec: " << flashtime << std::endl;
+                if ( flashtime >= 3.0 && flashtime < 5.5 ) {
+                    has_flash = true;
+                    obs_time = flashtime;
+                    obs_total_pe = flash.TotalPE();
+                    for (int pmt = 0; pmt < 32; pmt++) {
+                        obs_pe_per_pmt[pmt] = flash.PE(pmt);
+                    }
+                    break;
+                }
             }
         } else {
-            // Create flat dummy opflash
+            // Create flat dummy opflash values
             obs_total_pe = 0.0;
             obs_time = -1.0;
             for (int pmt = 0; pmt < 32; pmt++) {
@@ -567,6 +606,10 @@ int main(int argc, char** argv) {
             for (size_t vtx_idx = 0; vtx_idx < nuvetoed_v->size(); vtx_idx++) {
 
                 const larflow::reco::NuVertexCandidate& vertex_candidate = nuvetoed_v->at(vtx_idx);
+
+                std::cout << "VERTEX[" << vtx_idx << "]" << std::endl;
+                std::cout << "  ntracks: " << vertex_candidate.track_v.size() << std::endl;
+                std::cout << "  nshowers: " << vertex_candidate.shower_v.size() << std::endl;
 
                 // Store the reconstructed vertex position
                 reco_vertex_x_v.push_back(vertex_candidate.pos[0]);
@@ -633,7 +676,7 @@ int main(int argc, char** argv) {
 
                 } catch (const std::exception& e) {
                     if (verbose) {
-                        std::cerr << "Warning: UB flash prediction failed for entry " << ientry
+                        std::cout << "Warning: UB flash prediction failed for entry " << ientry
                                   << ", vertex " << vtx_idx << ": " << e.what() << std::endl;
                     }
                     n_tracks_all_v.push_back(0);
@@ -643,6 +686,8 @@ int main(int argc, char** argv) {
                     total_charge_all_v.push_back(0.0);
                     total_photons_all_v.push_back(0.0);
                 }
+                std::cout << "  ubpred success = " << ubpred_success << std::endl;
+                std::cout << "  ubpred_total_pe = " << ubpred_total_pe << std::endl;
 
                 ubpred_total_pe_all_v.push_back(ubpred_total_pe);
                 ubpred_pe_per_pmt_all_v.push_back(ubpred_pe_per_pmt);
@@ -660,6 +705,7 @@ int main(int argc, char** argv) {
                 if (ubpred_success && has_flash) {
                     try {
                         ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, true);
+                        std::cout << "  ubmodel balanced sinkhorn: " << ub_sinkhorn_balanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
                             std::cerr << "Warning: UB balanced Sinkhorn failed: " << e.what() << std::endl;
@@ -668,6 +714,7 @@ int main(int argc, char** argv) {
 
                     try {
                         ub_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, false);
+                        std::cout << "  ubmodel unbalanced sinkhorn: " << ub_sinkhorn_unbalanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
                             std::cerr << "Warning: UB unbalanced Sinkhorn failed: " << e.what() << std::endl;
@@ -684,7 +731,7 @@ int main(int argc, char** argv) {
 
                 bool siren_success = false;
                 std::vector<float> siren_pe_per_pmt(32, 0.0);
-                float siren_total_pe = 0.0;
+                float siren_total_pe = -1.0;
 
                 if (run_siren) {
                     try {
@@ -700,6 +747,7 @@ int main(int argc, char** argv) {
 
                         for ( auto const& phitcluster : phitclusters ) {
                             for (auto const& trackcluster : *phitcluster ) {
+                                std::cout << "  num cluster spacepoints: " << trackcluster.size() << std::endl;
                                 for (size_t ipt = 0; ipt < trackcluster.size(); ipt++) {
                                     auto const& lfhit = trackcluster.at(ipt);
 
@@ -712,6 +760,7 @@ int main(int argc, char** argv) {
                                     if ( !applied ) {
                                         // if a correction was not applied, this hit is not inside the TPC
                                         // we can throw it out.
+                                        //std::cout << "out-of-type: " << pos_sce[0] << "," << pos_sce[1] << "," << pos_sce[2] << std::endl;
                                         continue;
                                     }
                                     std::vector<float> fpos_sce(3,0);
@@ -733,6 +782,7 @@ int main(int argc, char** argv) {
                         }
 
                         int num_voxels = voxel_positions.size();
+                        std::cout << "  number of saved spacepoints: " << num_voxels << std::endl;
 
                         if (num_voxels > 0) {
                             // Prepare input tensors for SIREN model
@@ -747,11 +797,34 @@ int main(int argc, char** argv) {
                                 voxel_charge_t
                             );
 
+                            // std::cout << "voxel_features_t" << std::endl;
+                            // std::cout << voxel_features_t << std::endl;
+                            // std::cout << "voxel_charge_t" << std::endl;
+                            // std::cout << voxel_charge_t << std::endl;
+
                             // Run SIREN model
                             std::vector<float> siren_output = siren_model.predict_pe(voxel_features_t, voxel_charge_t);
+                            float min_pe_value = 1.0e9;
                             siren_pe_per_pmt.resize(32,0);
                             for (size_t ipmt=0; ipmt<32; ipmt++) {
                                 siren_pe_per_pmt[ipmt] = siren_output[ipmt]*siren_pe_scale;
+                                if ( siren_pe_per_pmt[ipmt] < min_pe_value )
+                                    min_pe_value = siren_pe_per_pmt[ipmt];
+                            }
+                            
+                            // detect pedastal
+                            int n_near_pedestal = 0;
+                            for (size_t ipmt=0; ipmt<32; ipmt++) {
+                                if ( siren_pe_per_pmt[ipmt]-min_pe_value < min_pe_value*0.1 )
+                                    n_near_pedestal++;
+                            }
+                            if ( n_near_pedestal>4 ) {
+                                std::cout << "detected pedestal: min_pe_value=" << min_pe_value << std::endl;
+                                // remove pedastal
+                                for (size_t ipmt=0; ipmt<32; ipmt++) {
+                                    if ( siren_pe_per_pmt[ipmt]-min_pe_value < min_pe_value*0.1 )
+                                        siren_pe_per_pmt[ipmt] = 0.0;
+                                }
                             }
 
                             // Calculate total PE
@@ -761,6 +834,9 @@ int main(int argc, char** argv) {
 
                             siren_success = true;
                         }// if num_voxels = 0
+                        else {
+                            siren_success = false;
+                        }
 
                     } catch (const std::exception& e) {
                         if (verbose) {
@@ -770,6 +846,10 @@ int main(int argc, char** argv) {
                     }
 
                 }// if run_siren flag is True
+                else {
+                    if ( verbose )
+                        std::cout << "not running siren model" << std::endl;
+                }
 
                 siren_total_pe_all_v.push_back(siren_total_pe);
                 siren_pe_per_pmt_all_v.push_back(siren_pe_per_pmt);
@@ -787,6 +867,7 @@ int main(int argc, char** argv) {
                 if (siren_success && has_flash) {
                     try {
                         siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, true);
+                        std::cout << "  siren balanced sinkhorn: " << siren_sinkhorn_balanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
                             std::cerr << "Warning: SIREN balanced Sinkhorn failed: " << e.what() << std::endl;
@@ -795,6 +876,7 @@ int main(int argc, char** argv) {
 
                     try {
                         siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, false);
+                        std::cout << "  siren unbalanced sinkhorn: " << siren_sinkhorn_unbalanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
                             std::cerr << "Warning: SIREN unbalanced Sinkhorn failed: " << e.what() << std::endl;
