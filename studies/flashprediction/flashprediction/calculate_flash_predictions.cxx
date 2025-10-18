@@ -93,8 +93,11 @@ int main(int argc, char** argv) {
     bool tickbackward = false;
     bool is_mc = false;
     bool run_siren = false;
-    float siren_pe_scale = 3.0;
+    float siren_pe_scale = 1.0;
     const int max_vertices = 5;
+    int cost_p = 2;
+    bool remove_pedastal = false;
+    float pmt_pe_min = 1.0e-4;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -556,6 +559,8 @@ int main(int argc, char** argv) {
         auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, opflash_treename));
         
         has_flash = (ev_opflash && ev_opflash->size() > 0);
+
+		std::vector<float> obs_pe_per_pmt_scaled(32, 0.0);
         
         if (has_flash) {
             // Use the first flash in the beam window
@@ -572,6 +577,8 @@ int main(int argc, char** argv) {
                     obs_total_pe = flash.TotalPE();
                     for (int pmt = 0; pmt < 32; pmt++) {
                         obs_pe_per_pmt[pmt] = flash.PE(pmt);
+                        if ( obs_pe_per_pmt[pmt]<pmt_pe_min )
+                            obs_pe_per_pmt[pmt] = pmt_pe_min;
                     }
                     break;
                 }
@@ -581,9 +588,13 @@ int main(int argc, char** argv) {
             obs_total_pe = 0.0;
             obs_time = -1.0;
             for (int pmt = 0; pmt < 32; pmt++) {
-                obs_pe_per_pmt[pmt] = 1.0/32.0;
+                obs_pe_per_pmt[pmt] = pmt_pe_min;
             }
         }
+
+	    for (int ipmt=0; ipmt<32; ipmt++) {
+          obs_pe_per_pmt_scaled[ipmt]   = obs_pe_per_pmt[ipmt]/5000.0;
+	    }
         
         // Process vertex candidates
         has_vertices = (nuvetoed_v && nuvetoed_v->size() > 0);
@@ -675,7 +686,9 @@ int main(int argc, char** argv) {
                     const auto& pe_per_pmt_map = predictor.getPredictedPE();
                     for (int pmt = 0; pmt < 32; pmt++) {
                         auto it = pe_per_pmt_map.find(pmt);
-                        ubpred_pe_per_pmt[pmt] = (it != pe_per_pmt_map.end()) ? it->second : 0.0;
+                        ubpred_pe_per_pmt[pmt] = (it != pe_per_pmt_map.end()) ? it->second : pmt_pe_min;
+                        if ( ubpred_pe_per_pmt[pmt]<pmt_pe_min )
+                            ubpred_pe_per_pmt[pmt] = pmt_pe_min;
                     }
 
                 } catch (const std::exception& e) {
@@ -707,8 +720,14 @@ int main(int argc, char** argv) {
                 std::vector<float> ub_sinkhorn_unbalanced(1, -999.0);
 
                 if (ubpred_success && has_flash) {
+
+                    std::vector<float> ubpred_pe_per_pmt_scaled(32, 0.0);
+	                for (int ipmt=0; ipmt<32; ipmt++) {
+                      ubpred_pe_per_pmt_scaled[ipmt]   = ubpred_pe_per_pmt[ipmt]/5000.0;
+	                }
+
                     try {
-                        ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, true);
+                        ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, true, 1036.0, cost_p);
                         std::cout << "  ubmodel balanced sinkhorn: " << ub_sinkhorn_balanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
@@ -717,7 +736,7 @@ int main(int argc, char** argv) {
                     }
 
                     try {
-                        ub_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, false);
+                        ub_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, false, 1036.0, cost_p );
                         std::cout << "  ubmodel unbalanced sinkhorn: " << ub_sinkhorn_unbalanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
@@ -811,7 +830,12 @@ int main(int argc, char** argv) {
                             float min_pe_value = 1.0e9;
                             siren_pe_per_pmt.resize(32,0);
                             for (size_t ipmt=0; ipmt<32; ipmt++) {
+                                
                                 siren_pe_per_pmt[ipmt] = siren_output[ipmt]*siren_pe_scale;
+
+                                if ( !remove_pedastal && siren_pe_per_pmt[ipmt]<pmt_pe_min )
+                                    siren_pe_per_pmt[ipmt] = pmt_pe_min;
+
                                 if ( siren_pe_per_pmt[ipmt] < min_pe_value )
                                     min_pe_value = siren_pe_per_pmt[ipmt];
                             }
@@ -822,12 +846,12 @@ int main(int argc, char** argv) {
                                 if ( siren_pe_per_pmt[ipmt]-min_pe_value < min_pe_value*0.1 )
                                     n_near_pedestal++;
                             }
-                            if ( n_near_pedestal>4 ) {
+                            if ( remove_pedastal && n_near_pedestal>4 ) {
                                 std::cout << "detected pedestal: min_pe_value=" << min_pe_value << std::endl;
                                 // remove pedastal
                                 for (size_t ipmt=0; ipmt<32; ipmt++) {
                                     if ( siren_pe_per_pmt[ipmt]-min_pe_value < min_pe_value*0.1 )
-                                        siren_pe_per_pmt[ipmt] = 0.0;
+                                        siren_pe_per_pmt[ipmt] = pmt_pe_min;
                                 }
                             }
 
@@ -870,7 +894,7 @@ int main(int argc, char** argv) {
 
                 if (siren_success && has_flash) {
                     try {
-                        siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, true);
+                        siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, true, 1036.0, cost_p );
                         std::cout << "  siren balanced sinkhorn: " << siren_sinkhorn_balanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
@@ -879,8 +903,15 @@ int main(int argc, char** argv) {
                     }
 
                     try {
-                        siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, false);
+
+		                std::vector<float> siren_pe_per_pmt_scaled(32);
+		                for (int ipmt=0; ipmt<32; ipmt++) {
+                          siren_pe_per_pmt_scaled[ipmt] = siren_pe_per_pmt[ipmt]/5000.0;
+		                }
+		      
+		                siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, false, 1036.0, cost_p );
                         std::cout << "  siren unbalanced sinkhorn: " << siren_sinkhorn_unbalanced[0] << std::endl;
+
                     } catch (const std::exception& e) {
                         if (verbose) {
                             std::cerr << "Warning: SIREN unbalanced Sinkhorn failed: " << e.what() << std::endl;

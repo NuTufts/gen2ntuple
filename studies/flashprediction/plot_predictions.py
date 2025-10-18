@@ -40,17 +40,35 @@ for ientry in range(nentries):
             hublm.SetBinContent(  ipmt+1, ttree.ubpred_pe_per_pmt_all.at(ivtx).at(ipmt) )
             hsiren.SetBinContent( ipmt+1, ttree.siren_pe_per_pmt_all.at(ivtx).at(ipmt)*scale_factor )
 
+        sinkdiv_siren     = ttree.siren_sinkhorn_div_all.at(ivtx).at(0)
+        sinkdiv_ublm      = ttree.ub_sinkhorn_div_all.at(ivtx).at(0)
+        unb_sinkdiv_siren = ttree.siren_unbalanced_sinkhorn_div_all.at(ivtx).at(0)
+        unb_sinkdiv_ublm  = ttree.ub_unbalanced_sinkhorn_div_all.at(ivtx).at(0)
+        ttext_siren     = rt.TText(0.2,0.80,f"Siren: balanced sinkdiv {sinkdiv_siren:0.2e}")
+        ttext_ublm      = rt.TText(0.2,0.75,f"UB LM: balanced sinkdiv {sinkdiv_ublm:0.2e}")    
+        ttext_unb_siren = rt.TText(0.2,0.70,f"Siren: balanced sinkdiv {unb_sinkdiv_siren:0.2e}")
+        ttext_unb_ublm  = rt.TText(0.2,0.65,f"UB LM: balanced sinkdiv {unb_sinkdiv_ublm:0.2e}")    
+        ttext_siren.SetNDC(True)
+        ttext_ublm.SetNDC(True)   
+        ttext_unb_siren.SetNDC(True)
+        ttext_unb_ublm.SetNDC(True)  
+
 
         hmax = hobs
         maxmax  = 0.0
         for h in [hobs, hsiren, hublm]:
+            h.SetLineWidth(2)
             if h.GetMaximum()>maxmax:
                 maxmax = h.GetMaximum()
                 hmax = h
         hmax.Draw()
-        hobs.Draw("same")
         hublm.Draw("same")
         hsiren.Draw("same")
+        hobs.Draw("same")
+        ttext_siren.Draw()
+        ttext_ublm.Draw()
+        ttext_unb_siren.Draw()
+        ttext_unb_ublm.Draw()
         c.Update()
         print("enter for next vertex")
         input()
