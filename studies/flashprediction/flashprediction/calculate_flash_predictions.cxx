@@ -272,8 +272,10 @@ int main(int argc, char** argv) {
     std::vector<float>              ubpred_total_pe_all_v;   // ub light model prediction, total pe
     std::vector<std::vector<float>> ubpred_pe_per_pmt_all_v; // ub light model pe per pmt prediction: [vertex][pmt]
 
-    std::vector<float>              siren_total_pe_all_v; // ub light model prediction, total pe
+    std::vector<float>              siren_total_pe_all_v;   // ub light model prediction, total pe
     std::vector<std::vector<float>> siren_pe_per_pmt_all_v; // ub light model pe per pmt prediction: [vertex][pmt]
+    std::vector<int>                siren_outtpc_pts_v;     // num of out of tpc pts while making charge
+    std::vector<float>              siren_voxelcharge_v;
     
     // // Metrics vectors for UB light model
     std::vector<std::vector<float>> ub_sinkhorn_div_all_v;             // balanced sinkhorn divergance: [vertex][reg_param]
@@ -335,6 +337,8 @@ int main(int argc, char** argv) {
     // SIREN model prediction branches (vectors)
     output_tree->Branch("siren_total_pe_all", &siren_total_pe_all_v);
     output_tree->Branch("siren_pe_per_pmt_all", &siren_pe_per_pmt_all_v);
+    output_tree->Branch("siren_outtpc_pts",&siren_outtpc_pts_v);
+    output_tree->Branch("siren_voxelcharge",&siren_voxelcharge_v);
 
     // SIREN model metrics branches (vectors)
     output_tree->Branch("siren_sinkhorn_div_all", &siren_sinkhorn_div_all_v);
@@ -468,6 +472,8 @@ int main(int argc, char** argv) {
         // SIREN model predictions
         siren_total_pe_all_v.clear();
         siren_pe_per_pmt_all_v.clear();
+	siren_outtpc_pts_v.clear();
+	siren_voxelcharge_v.clear();
 
         // SIREN model metrics
         siren_sinkhorn_div_all_v.clear();
@@ -669,6 +675,7 @@ int main(int argc, char** argv) {
                     n_showers_all_v.push_back(predictor.getNumShowersProcessed());
                     total_charge_all_v.push_back(predictor.getTotalChargeCollected());
                     total_photons_all_v.push_back(predictor.getTotalPhotonsEmitted());
+		    std::cout << "  total charge for UBmodel: " << predictor.getTotalChargeCollected() << std::endl;
 
                     // Count primary tracks and showers
                     int n_primary_tracks = 0;
@@ -755,7 +762,8 @@ int main(int argc, char** argv) {
                 bool siren_success = false;
                 std::vector<float> siren_pe_per_pmt(32, 0.0);
                 float siren_total_pe = -1.0;
-
+		int num_invalid_sce_pts = 0;
+		float total_voxel_charge = 0.0;
                 if (run_siren) {
                     try {
                         // Get 3D points and charge from the vertex candidate's track and shower collections
@@ -768,6 +776,7 @@ int main(int argc, char** argv) {
                             &vertex_candidate.shower_v
                         };
 
+			std::cout << "Gather charge for SIREN model: VERTEX[" << vtx_idx << "]" << std::endl;
                         for ( auto const& phitcluster : phitclusters ) {
                             for (auto const& trackcluster : *phitcluster ) {
                                 std::cout << "  num cluster spacepoints: " << trackcluster.size() << std::endl;
@@ -778,18 +787,21 @@ int main(int argc, char** argv) {
                                     std::vector<float> pos = { lfhit[0], lfhit[1], lfhit[2] };
 
                                     // we have to space charge correct the positions
-                                    bool applied = false;
-                                    std::vector<double> pos_sce = reverse_sce->ApplySpaceChargeEffect( lfhit[0], lfhit[1], lfhit[2], applied );
-                                    if ( !applied ) {
-                                        // if a correction was not applied, this hit is not inside the TPC
-                                        // we can throw it out.
-                                        //std::cout << "out-of-type: " << pos_sce[0] << "," << pos_sce[1] << "," << pos_sce[2] << std::endl;
-                                        continue;
-                                    }
-                                    std::vector<float> fpos_sce(3,0);
-                                    for (size_t v=0; v<3; v++)
-                                        fpos_sce[v] = pos_sce[v];
-                                    voxel_positions.push_back( fpos_sce );
+				    // incorrect. voxel preparer will do this for us
+                                    // bool applied = false;
+                                    // std::vector<double> pos_sce = reverse_sce->ApplySpaceChargeEffect( lfhit[0], lfhit[1], lfhit[2], applied );
+                                    // if ( !applied ) {
+                                    //     // if a correction was not applied, this hit is not inside the TPC
+                                    //     // we can throw it out.
+                                    //     //std::cout << "out-of-type: " << pos_sce[0] << "," << pos_sce[1] << "," << pos_sce[2] << std::endl;
+				    //     num_invalid_sce_pts++;
+                                    //     continue;
+                                    // }
+                                    // std::vector<float> fpos_sce(3,0);
+                                    // for (size_t v=0; v<3; v++)
+                                    //     fpos_sce[v] = pos_sce[v];
+                                    // voxel_positions.push_back( fpos_sce );
+				    voxel_positions.push_back( pos );
 
                                     // these are the image coordinates from which they were projected
                                     std::vector<float> pixelcoords(4,0); // (tick, U,V,Y)
@@ -820,10 +832,15 @@ int main(int argc, char** argv) {
                                 voxel_charge_t
                             );
 
+			    num_invalid_sce_pts = input_interface.get_num_outside_tpc();
+			    std::cout << "  number of invalid SCE pts: " << num_invalid_sce_pts << std::endl;			    
+
                             // std::cout << "voxel_features_t" << std::endl;
                             // std::cout << voxel_features_t << std::endl;
                             // std::cout << "voxel_charge_t" << std::endl;
                             // std::cout << voxel_charge_t << std::endl;
+			    total_voxel_charge = torch::sum(voxel_charge_t).item<float>();
+			    std::cout << "  Voxel charge sum: " <<  total_voxel_charge << std::endl;
 
                             // Run SIREN model
                             std::vector<float> siren_output = siren_model.predict_pe(voxel_features_t, voxel_charge_t);
@@ -881,6 +898,8 @@ int main(int argc, char** argv) {
 
                 siren_total_pe_all_v.push_back(siren_total_pe);
                 siren_pe_per_pmt_all_v.push_back(siren_pe_per_pmt);
+		siren_voxelcharge_v.push_back( total_voxel_charge );
+		siren_outtpc_pts_v.push_back( num_invalid_sce_pts );
 
                 // Calculate SIREN metrics
                 float siren_pe_diff = siren_total_pe - obs_total_pe;
