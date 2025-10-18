@@ -72,6 +72,9 @@ message( STATUS "Status for finding larpid: ${larpid_FOUND}" )
 set( larflow_DIR "$ENV{LARFLOW_LIBDIR}/cmake/larflow")
 find_package( larflow REQUIRED )
 
+set( flashmatch_dataprep_DIR "$ENV{FLASHMATCH_LIBDIR}/cmake/flashmatch_dataprep" )
+find_package( flashmatch_dataprep REQUIRED )
+
 
 # ## Git Submodules
 # find_package(Git QUIET)

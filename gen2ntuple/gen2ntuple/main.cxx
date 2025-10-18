@@ -60,11 +60,12 @@ int main(int argc, char** argv) {
     }
     
     // Create data structures
-    EventData event_data;
-    RecoData  reco_data;
-    POTData   pot_data;
+    EventData event_data;  // Stores the data we will save to the output ntuple tree
+    RecoData  reco_data;   // Interface to the input lantern reco data
+    POTData   pot_data;    // Stores the POT information we will save to the output ntuple tree
     
     // Create branch manager
+    // Creates the output TTrees, defines the branches and sets them up to store info in EventDat and POTData
     BranchManager branch_manager(output_file.get(), config.isMC(), !config.isKeypointsDisabled());
 
     try {
@@ -82,6 +83,7 @@ int main(int argc, char** argv) {
     LOG_INFO("Branch setup complete");
     
     // Create processing modules
+    // Interface to the input data, including colation with upstream larcv and larlite files
     FileManager file_manager;
     file_manager.setMCMode(config.isMC());
     file_manager.setDLAnaMode(config.isDLAna());
@@ -107,15 +109,18 @@ int main(int argc, char** argv) {
         std::cerr << e.what() << std::endl;
     }
 
+    // Truth parsing classes helpful for image-truth, reco-truth matching and analysis
     ublarcvapp::mctools::MCPixelPGraph mcpg;
     ublarcvapp::mctools::MCPixelPMap   mcpm;
 
+    // Setup the class we'll use to run the larpid network (aka ProngCNN)
     LOG_INFO("Setup ProngCNN");
     bool larpid_debug = false;
     larpid::model::TorchModel larpid_model;
     larpid_model.Initialize( config.getModelPath(), larpid_debug );
 
-    // Create processors
+    // Create processors: responsible for filling portions of the output data
+    // ISSUE: what processor fills what EventData object is not clear in our setup
     std::unique_ptr<MCTruthProcessor> mc_processor;
     if (config.isMC()) {
         mc_processor = std::make_unique<MCTruthProcessor>();
