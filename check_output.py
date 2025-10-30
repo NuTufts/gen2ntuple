@@ -1,6 +1,8 @@
 import os,sys
 import ROOT as rt
 
+REMAKE_NTUPLES = False
+
 completed_arrayids = []
 incomplete_arrayids = []
 missing_arrayids = []
@@ -29,11 +31,11 @@ missing_arrayids = []
 #nfiles=5
 #narrayids=1
 
-sample="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
-nfiles=5
-narrayids=98
-bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v28_wctagger_nueintrinsics.txt"
-recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.txt"
+#sample="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+#nfiles=5
+#narrayids=98
+#bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v28_wctagger_nueintrinsics.txt"
+#recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.txt"
 
 #sample="mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune"
 #nfiles=30
@@ -53,6 +55,12 @@ recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_re
 #bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v28_wctagger_bnb5e19.txt"
 #recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune.txt"
 
+sample="mcc9_v28_wctagger_run3_bnb1e19"
+nfiles=10
+narrayids=251
+bookkeeping="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/bookkeeping/fileinfo_mcc9_v28_wctagger_run3_bnb1e19.txt"
+recolist="/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod.txt"
+
 
 # open and parse the book keeping file
 fileidmap = {}
@@ -64,6 +72,7 @@ with open(bookkeeping,'r') as f:
         fileid = int(info[0])
         nentries = int(info[1])
         fileidmap[fileid] = nentries
+print("loaded book-keeping file. entries=",len(fileidmap))
 
 # open the recolist in order to determine the expected num entries for each output ntuple file
 ntuple_num_expected = {}
@@ -79,11 +88,12 @@ with open(recolist,'r') as f:
         fbase = os.path.basename(l)        
         info = fbase.split("_")
         fid = int(info[1][len("fileid"):])
-        print(fbase,": ",fid)
+        print(f"parse reco input list: [{fid}] {fbase}")
         if fid in fileidmap:
             nexpected += fileidmap[fid]
             ninfiles += 1
         else:
+            print(" could not parse")
             pass
         i+=1
         if i==nfiles:
@@ -96,15 +106,21 @@ with open(recolist,'r') as f:
             iout += 1
         else:
             pass
+print("Completed number of expected entries in each ntuple")
+print(" entries: ",len(ntuple_num_expected))
+input()
         
 fmissing_out = open("%s_test_incomplete.txt"%(sample),'w')
 fcomplete_out = open("%s_test_complete.txt"%(sample),'w')
 
+#output_dir="./out/%s/"%(sample)
 output_dir="./out_test/%s/"%(sample)
 print("Scan output ntuple directory: ",output_dir)
 ntotentries = 0
 outputmap = {}
 flist = os.listdir(output_dir)
+
+print("Loop over outputs and make combined ntuples")
 for f in flist:
     f = f.strip()
     fpath = "./out_test/%s/"%(sample)+f
@@ -120,15 +136,24 @@ for f in flist:
         subntuple = "./out_test/%s/subntuple_%s_%03d.root"%(sample,sample,arrayid)
 
         # if the subntuple does not exist, we run hadd to make it
-        if not os.path.exists(subntuple):
+        if not os.path.exists(subntuple) or REMAKE_NTUPLES:
+            print("  make subntuple: ",subntuple)
             os.system(f"hadd -f {subntuple} {fpath}/*.root")
             #raise(" did not find subntuple file for this directory: ",subntuple)
-    else:
+
+print("Loop over output folder contents and count number of entries")
+flist = os.listdir(output_dir)
+for f in flist:
+    f = f.strip()
+    fpath = "./out_test/%s/"%(sample)+f
+            
+    if not os.path.isdir(fpath):        
 
         # check if the file is one of our subntuple files
         if len(f)<9 or f[:9]!="subntuple" or f[-5:]!=".root":
-            print("not a subntuple file: ",f)
+            #print("not a subntuple file: ",f)
             continue
+        print("count entries in subntuple: ",fpath)
 
         #print(f.strip())
         # get the arrayid from the name of the file
@@ -136,10 +161,14 @@ for f in flist:
 
         # open the file to get the num of entries
         rfile = rt.TFile( fpath, "open" )
-        eventtree = rfile.Get("EventTree")
-        nentries  = eventtree.GetEntries()
-        rfile.Close()
-        print("file[arrayid=%d]: "%(arrayid),f," nentries=",nentries)
+        try:
+            eventtree = rfile.Get("EventTree")
+            nentries  = eventtree.GetEntries()            
+            rfile.Close()
+        except:
+            nentries = 0
+        
+        print("file[arrayid=%d]: "%(arrayid),f," nentries=",nentries)        
 
         # get the number of entries that are expected
         # from summing the block of input ntuple files

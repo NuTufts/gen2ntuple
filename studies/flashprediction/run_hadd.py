@@ -3,7 +3,10 @@ import os,sys
 #samplename="mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune"
 #samplename="mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune"
 #samplename="mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune"
-samplename="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+#samplename="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+samplename="mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod"
+
+print("run_hadd.py on sample=",samplename)
 
 output_dir=f"./output/{samplename}/"
 output_list = os.listdir(output_dir)

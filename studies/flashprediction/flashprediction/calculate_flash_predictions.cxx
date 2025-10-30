@@ -94,11 +94,10 @@ int main(int argc, char** argv) {
     bool is_mc = false;
     bool run_siren = false;
     float siren_pe_scale = 1.0;
-    const int max_vertices = 5;
     int cost_p = 2;
     bool remove_pedastal = false;
     float pmt_pe_min = 1.0e-4;
-    
+   
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         
@@ -165,8 +164,11 @@ int main(int argc, char** argv) {
             opflash_treename = "simpleFlashBeam::DataRecoStage1Test";
         else if ( dataset_type=="run3overlay" )
             opflash_treename = "simpleFlashBeam::OverlayStage1OpticalDLrerun";
-        else if ( dataset_type=="run3bnb1e19")
+        else if ( dataset_type=="run3bnb1e19") {
             opflash_treename = "simpleFlashBeam";
+	    //siren_pe_scale = 2.5; // scale for flashmlp_model_extbnb_deft_universe_iteration_075k.pt
+	    siren_pe_scale = 1.0; // scale for flashmlp_model_extbnb_deft_universe_iteration_075k.pt	    
+	}
         else {
             std::cerr << "Unrecognized dataset_type. Options." << std::endl;
             std::cerr << "  run1bnb5e19: Run 1 Open Data sample. [simpleFlashBeam::OverlayStage1OpticalDLrerun]" << std::endl;
@@ -257,7 +259,16 @@ int main(int argc, char** argv) {
     // Observed flash info (same for whole event)
     float obs_total_pe, obs_time;
     std::vector<float> obs_pe_per_pmt;
+
+    // Observed flash info, using the cosmic readout (opflashcosmic)
+    float cosmic_total_pe, cosmic_time;
+    std::vector<float> cosmic_pe_per_pmt;
+
+    // We mask the simple flash with the cosmic readout flash
+    float masked_total_pe;
+    std::vector<float> masked_pe_per_pmt;
     
+
     // Vectors for vertex-specific predictions (all particles)
     std::vector<float> reco_vertex_x_v; // reconstructed vertex x-position
     std::vector<float> reco_vertex_y_v; // reconstructed vertex y-position
@@ -311,6 +322,14 @@ int main(int argc, char** argv) {
     output_tree->Branch("obs_time",       &obs_time,        "obs_time/F");
     output_tree->Branch("obs_pe_per_pmt", &obs_pe_per_pmt);
 
+    // Observed flash branches, using the cosmic readout, i.e. opflashCosmic    
+    output_tree->Branch("cosmic_total_pe",   &cosmic_total_pe,    "cosmic_total_pe/F");
+    output_tree->Branch("cosmic_time",       &cosmic_time,        "cosmic_time/F");
+    output_tree->Branch("cosmic_pe_per_pmt", &cosmic_pe_per_pmt);
+
+    output_tree->Branch("masked_total_pe",   &masked_total_pe,    "masked_total_pe/F");
+    output_tree->Branch("masked_pe_per_pmt", &masked_pe_per_pmt);
+    
     // Reconstructed vertex position branches (vectors)
     output_tree->Branch("reco_vertex_x", &reco_vertex_x_v);
     output_tree->Branch("reco_vertex_y", &reco_vertex_y_v);
@@ -489,6 +508,10 @@ int main(int argc, char** argv) {
         
         obs_pe_per_pmt.clear();
         obs_pe_per_pmt.resize(32, 0.0);
+        cosmic_pe_per_pmt.clear();
+        cosmic_pe_per_pmt.resize(32, 0.0);
+        masked_pe_per_pmt.clear();
+        masked_pe_per_pmt.resize(32, 0.0);
         
         // Set event info
         entry = ientry;
@@ -563,10 +586,13 @@ int main(int argc, char** argv) {
         
         // Get observed opflash
         auto ev_opflash = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, opflash_treename));
+	
+        auto ev_opflash_cosmic = (larlite::event_opflash*)(ioll.get_data(larlite::data::kOpFlash, "opflashCosmic"));	
         
         has_flash = (ev_opflash && ev_opflash->size() > 0);
 
-		std::vector<float> obs_pe_per_pmt_scaled(32, 0.0);
+	std::vector<float> obs_pe_per_pmt_scaled(32, 0.0);
+	float reference_total_pe = 0;
         
         if (has_flash) {
             // Use the first flash in the beam window
@@ -582,26 +608,82 @@ int main(int argc, char** argv) {
                     obs_time = flashtime;
                     obs_total_pe = flash.TotalPE();
                     for (int pmt = 0; pmt < 32; pmt++) {
-                        obs_pe_per_pmt[pmt] = flash.PE(pmt);
-                        if ( obs_pe_per_pmt[pmt]<pmt_pe_min )
-                            obs_pe_per_pmt[pmt] = pmt_pe_min;
+		      obs_pe_per_pmt[pmt] = flash.PE(pmt);
+		      if ( obs_pe_per_pmt[pmt]<pmt_pe_min )
+			obs_pe_per_pmt[pmt] = pmt_pe_min;
                     }
                     break;
                 }
             }
-        } else {
-            // Create flat dummy opflash values
-            obs_total_pe = 0.0;
-            obs_time = -1.0;
-            for (int pmt = 0; pmt < 32; pmt++) {
-                obs_pe_per_pmt[pmt] = pmt_pe_min;
-            }
+
+	    // look to see if there is a cosmic opflash corresponding to the beam flash
+	    std::cout << "ev_opflash_cosmic: " << ev_opflash_cosmic << std::endl;
+	    std::cout << "look for cosmic flash: num cosmic flashes = " << ev_opflash_cosmic->size() << std::endl;
+	    int closest_index = -1;
+	    float closest_time = 1e9;
+	    for (size_t icosmic=0; icosmic<ev_opflash_cosmic->size(); icosmic++) {
+	      auto const& cosmicflash = ev_opflash_cosmic->at(icosmic);
+	      float dt = std::fabs( cosmicflash.Time()-obs_time );
+	      if ( dt < closest_time ) {
+		closest_time = dt;
+		closest_index = icosmic;
+	      }
+	    }
+	    if ( closest_index>=0 && closest_time<0.5 ) {
+	      auto const& cosmicflash = ev_opflash_cosmic->at( closest_index );
+	      cosmic_time = cosmicflash.Time();
+	      cosmic_total_pe = 0.0;
+	      masked_total_pe = 0.0;
+	      for (size_t ipmt=0; ipmt<32; ipmt++) {
+		cosmic_pe_per_pmt[ipmt] = cosmicflash.PE(200+ipmt);
+		cosmic_total_pe += cosmic_pe_per_pmt[ipmt];
+
+		// make masked observed flash
+		// we mimic the cosmic readout thresholding
+		if ( cosmic_pe_per_pmt[ipmt]>1.0 )
+		  masked_pe_per_pmt[ipmt] = obs_pe_per_pmt[ipmt];
+		else
+		  masked_pe_per_pmt[ipmt] = pmt_pe_min;
+
+		masked_total_pe += masked_pe_per_pmt[ipmt];
+							  
+	      }
+	    }
+	    else {
+	      cosmic_total_pe = 0.0;
+	      masked_total_pe = 0.0;	      
+	      cosmic_time = -1.0;
+	      for (size_t ipmt=0; ipmt<32; ipmt++) {
+		cosmic_pe_per_pmt[ipmt] = pmt_pe_min;
+		masked_pe_per_pmt[ipmt] = pmt_pe_min;
+	      }	      
+	    }
+
+	    //reference_total_pe = obs_total_pe;
+	    reference_total_pe = cosmic_total_pe;
+	    
+        } // end of if (has_flash)
+	else {
+	  // Create flat dummy opflash values
+	  obs_total_pe = 0.0;
+	  reference_total_pe = 0.0;
+	  obs_time = -1.0;
+	  cosmic_time = -1.0;
+	  cosmic_total_pe = 0.0;
+	  masked_total_pe = 0.0;
+	  for (int pmt = 0; pmt < 32; pmt++) {
+	    obs_pe_per_pmt[pmt] = pmt_pe_min;
+	    cosmic_pe_per_pmt[pmt] = pmt_pe_min;
+	    masked_pe_per_pmt[pmt] = pmt_pe_min;
+	  }
         }
 
-	    for (int ipmt=0; ipmt<32; ipmt++) {
-          obs_pe_per_pmt_scaled[ipmt]   = obs_pe_per_pmt[ipmt]/5000.0;
-	    }
-        
+	// prepare pe per pmt used for comparisons to predictions
+	for (int ipmt=0; ipmt<32; ipmt++) {
+          //obs_pe_per_pmt_scaled[ipmt]   = obs_pe_per_pmt[ipmt]/5000.0;
+	  obs_pe_per_pmt_scaled[ipmt]   = cosmic_pe_per_pmt[ipmt]/5000.0;
+	}
+
         // Process vertex candidates
         has_vertices = (nuvetoed_v && nuvetoed_v->size() > 0);
         n_vertices = has_vertices ? nuvetoed_v->size() : 0;
@@ -717,8 +799,8 @@ int main(int argc, char** argv) {
                 ubpred_pe_per_pmt_all_v.push_back(ubpred_pe_per_pmt);
 
                 // Calculate UB metrics
-                float ub_pe_diff = ubpred_total_pe - obs_total_pe;
-                float ub_pe_fracerr = (obs_total_pe > 0.0) ? (ubpred_total_pe - obs_total_pe) / obs_total_pe : -999.0;
+                float ub_pe_diff = ubpred_total_pe - reference_total_pe;
+                float ub_pe_fracerr = (reference_total_pe > 0.0) ? (ubpred_total_pe - reference_total_pe) / reference_total_pe : -999.0;
                 ub_pe_diff_all_v.push_back(ub_pe_diff);
                 ub_pe_fracerr_all_v.push_back(ub_pe_fracerr);
 
@@ -734,7 +816,7 @@ int main(int argc, char** argv) {
 	                }
 
                     try {
-                        ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt, obs_pe_per_pmt, true, 1036.0, cost_p);
+                        ub_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(ubpred_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, true, 1036.0, cost_p);
                         std::cout << "  ubmodel balanced sinkhorn: " << ub_sinkhorn_balanced[0] << std::endl;
                     } catch (const std::exception& e) {
                         if (verbose) {
@@ -902,8 +984,8 @@ int main(int argc, char** argv) {
 		siren_outtpc_pts_v.push_back( num_invalid_sce_pts );
 
                 // Calculate SIREN metrics
-                float siren_pe_diff = siren_total_pe - obs_total_pe;
-                float siren_pe_fracerr = (obs_total_pe > 0.0) ? (siren_total_pe - obs_total_pe) / obs_total_pe : -999.0;
+                float siren_pe_diff = siren_total_pe - reference_total_pe;
+                float siren_pe_fracerr = (reference_total_pe > 0.0) ? (siren_total_pe - reference_total_pe) / reference_total_pe : -999.0;
                 siren_pe_diff_all_v.push_back(siren_pe_diff);
                 siren_pe_fracerr_all_v.push_back(siren_pe_fracerr);
 
@@ -912,30 +994,30 @@ int main(int argc, char** argv) {
                 std::vector<float> siren_sinkhorn_unbalanced(1, -999.0);
 
                 if (siren_success && has_flash) {
-                    try {
-                        siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt, obs_pe_per_pmt, true, 1036.0, cost_p );
-                        std::cout << "  siren balanced sinkhorn: " << siren_sinkhorn_balanced[0] << std::endl;
-                    } catch (const std::exception& e) {
-                        if (verbose) {
-                            std::cerr << "Warning: SIREN balanced Sinkhorn failed: " << e.what() << std::endl;
-                        }
-                    }
 
-                    try {
+		  std::vector<float> siren_pe_per_pmt_scaled(32);
+		  for (int ipmt=0; ipmt<32; ipmt++) {
+		    siren_pe_per_pmt_scaled[ipmt] = siren_pe_per_pmt[ipmt]/5000.0;
+		  }
+		  
+		  try {
+		    siren_sinkhorn_balanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, true, 1036.0, cost_p );
+		    std::cout << "  siren balanced sinkhorn: " << siren_sinkhorn_balanced[0] << std::endl;
+		  } catch (const std::exception& e) {
+		    if (verbose) {
+		      std::cerr << "Warning: SIREN balanced Sinkhorn failed: " << e.what() << std::endl;
+		    }
+		  }
 
-		                std::vector<float> siren_pe_per_pmt_scaled(32);
-		                for (int ipmt=0; ipmt<32; ipmt++) {
-                          siren_pe_per_pmt_scaled[ipmt] = siren_pe_per_pmt[ipmt]/5000.0;
-		                }
-		      
-		                siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, false, 1036.0, cost_p );
-                        std::cout << "  siren unbalanced sinkhorn: " << siren_sinkhorn_unbalanced[0] << std::endl;
-
-                    } catch (const std::exception& e) {
-                        if (verbose) {
-                            std::cerr << "Warning: SIREN unbalanced Sinkhorn failed: " << e.what() << std::endl;
-                        }
-                    }
+		  try {
+		    siren_sinkhorn_unbalanced[0] = ubsinkdiv_algo.calc(siren_pe_per_pmt_scaled, obs_pe_per_pmt_scaled, false, 1036.0, cost_p );
+		    std::cout << "  siren unbalanced sinkhorn: " << siren_sinkhorn_unbalanced[0] << std::endl;
+		    
+		  } catch (const std::exception& e) {
+		    if (verbose) {
+		      std::cerr << "Warning: SIREN unbalanced Sinkhorn failed: " << e.what() << std::endl;
+		    }
+		  }
                 }
 
                 siren_sinkhorn_div_all_v.push_back(siren_sinkhorn_balanced);
@@ -947,6 +1029,8 @@ int main(int argc, char** argv) {
                     std::cout << " UB_PE=" << ubpred_total_pe;
                     if (run_siren) std::cout << " SIREN_PE=" << siren_total_pe;
                     std::cout << " OBS_PE=" << obs_total_pe;
+		    std::cout << " COS_PE=" << cosmic_total_pe;
+		    std::cout << " REF_PE=" << reference_total_pe;
                     if (is_mc && has_mc_truth) {
                         std::cout << " dist_to_true=" << vtx_dist_to_true_v[vtx_idx] << " cm";
                     }

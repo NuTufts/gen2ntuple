@@ -2,10 +2,13 @@ import os, sys
 import ROOT as rt
 
 #samplename="mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune"
-samplename="mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune"
+#samplename="mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune"
 #samplename="mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune"
+#samplename="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+samplename="mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod"
 
-ntuple_gen2=f"../../ntuple_{samplename}.root"
+#ntuple_gen2=f"../../ntuple_{samplename}.root"
+ntuple_gen2=f"ntuple_{samplename}.root"
 gen2file = rt.TFile(ntuple_gen2)
 gen2tree = gen2file.Get("EventTree")
 nentries = gen2tree.GetEntries()

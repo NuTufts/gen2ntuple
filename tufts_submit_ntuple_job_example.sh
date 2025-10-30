@@ -4,16 +4,15 @@
 #SBATCH --time=8:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=8000
-#SBATCH --array=85-234
+#SBATCH --array=1-251
 ##SBATCH --partition=wongjiradlab
-#SBATCH --partition=batch
+#SBATCH --partition=batch,wongjiradlab
 ##SBATCH --exclude=i2cmp006,s1cmp001,s1cmp002,s1cmp003,p1cmp005,p1cmp041,c1cmp003,c1cmp004i
 ##SBATCH --exclude=p1cmp075
-#SBATCH --error=err/griderr_ntuple_mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune.sub00.%A.%a.node%N.err
-#SBATCH --output=log/stdout_ntuple_mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune.sub00.%A.%a.node%N.log
+#SBATCH --error=err/griderr_ntuple_mcc9_v28_wctagger_run3_bnb1e19.sub00.%A.%a.node%N.err
+#SBATCH --output=log/stdout_ntuple_mcc9_v28_wctagger_run3_bnb1e19.sub00.%A.%a.node%N.log
 
-#CONTAINER=/cluster/tufts/wongjiradlabnu/larbys/larbys-container/singularity_minkowski_u20.04.cu111.torch1.9.0_jupyter_xgboost.sif
-CONTAINER=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_torch1.9.0_minkowski.sif
+CONTAINER=/cluster/tufts/wongjiradlabnu/larbys/larbys-container/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
 GEN2NTUPLE_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/
 LMRECO_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_reco_scripts/
 VALSCRIPT=${GEN2NTUPLE_DIR}/tufts_run_ntuple_maker.sh
@@ -29,9 +28,9 @@ weightDir=/cluster/tufts/wongjiradlabnu/mrosen25/gen2ntuple/event_weighting/
 #WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run1.pkl
 #MCFLAG="-mc"
 
-# mcc9_v28_wctagger_bnboverlay: run 1 BNB nue intrinsics overlay
+# mcc9_v28_wctagger_nueintrinsics: run 1 BNB nue intrinsics overlay
 # 490 good reco files
-# nfiles=5
+#nfiles=5
 # njobs=98
 #SAMPLENAME=mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune
 #RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.txt
@@ -40,14 +39,14 @@ weightDir=/cluster/tufts/wongjiradlabnu/mrosen25/gen2ntuple/event_weighting/
 #MCFLAG="-mc"
 
 # mcc9_v29e_dl_run1_C1_extbnb : run 1 EXTBNB
-NFILES=100
+#NFILES=100
 # total files in good list: 23431
 # number of jobs is 234
-SAMPLENAME=mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune
-RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune.txt
-TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v29e_dl_run1_C1_extbnb.txt
-WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run1.pkl
-MCFLAG=""
+#SAMPLENAME=mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune
+#RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune.txt
+#TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v29e_dl_run1_C1_extbnb.txt
+#WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run1.pkl
+#MCFLAG=""
 
 # mcc9_v28_wctagger_bnb5e19 : run 1 open data
 # number of files: 11681
@@ -57,6 +56,17 @@ MCFLAG=""
 #TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_bnb5e19.txt
 #WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run1.pkl
 #MCFLAG=""
+
+# mcc9_v28_wctagger_run3_bnb1e19: run 1 BNB nue intrinsics overlay
+# 490 good reco files
+NFILES=10
+njobs=2515
+SAMPLENAME=mcc9_v28_wctagger_run3_bnb1e19
+RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod.txt
+TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_run3_bnb1e19.txt
+WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run3.pkl
+MCFLAG=""
+
 
 #RECOFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge_filelist.txt
 #TRUTHFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge_filelist.txt
@@ -99,10 +109,11 @@ MCFLAG=""
 #SAMPLENAME="mcc9_v28_wctagger_bnb5e19"
 
 
-OUTTAG=v3dev_reco_retune
+#OUTTAG=v3dev_reco_retune
+OUTTAG=v2_me_06_03_prod
 
-#CNNMODEL=run3bOverlays_quadTask_plAll_2inChan_5ClassHard_minHit10_b64_oneCycleLR_v2me05_noPCTrainOrVal/ResNet34_recoProng_5class_epoch20.pt
-CNNMODEL=LArPID_default_network_weights.pt
+#CNNMODEL=LArPID_default_network_weights.pt
+CNNMODEL=LArPID_alternate_network_weights.pt
 
 #WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run1.pkl
 #WEIGHTFILE=weights_forCV_v48_Sep24_bnb_nu_run2.pkl

@@ -4,16 +4,16 @@
 #SBATCH --time=8:00:00
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=4000
-#SBATCH --array=0-97
+#SBATCH --array=0-251
 ##SBATCH --partition=wongjiradlab
-#SBATCH --partition=batch
+#SBATCH --partition=batch,wongjiradlab
 ##SBATCH --exclude=i2cmp006,s1cmp001,s1cmp002,s1cmp003,p1cmp005,p1cmp041,c1cmp003,c1cmp004i
 ##SBATCH --exclude=p1cmp075
 #SBATCH --error=err/griderr_flash_prediction.sub00.%A.%a.node%N.err
 #SBATCH --output=log/stdout_flash_prediction.sub00.%A.%a.node%N.log
 
 # Container to run in -- needs to be same as the one used to build UBDL
-CONTAINER=/cluster/tufts/wongjiradlabnu/twongj01/gen2/photon_analysis/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
+CONTAINER=/cluster/tufts/wongjiradlabnu/larbys/larbys-container/u20.04_cu111_cudnn8_torch1.9.0_minkowski_npm.sif
 
 # Location where this script is located
 REPO_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/studies/flashprediction/
@@ -37,12 +37,12 @@ LMRECO_DIR=/cluster/tufts/wongjiradlabnu/twongj01/gen2/dlgen2prod/larmatch_and_r
 
 # mcc9_v28_wctagger_nueintrinsics: run 1 BNB nue intrinsics overlay
 # 490 good reco files
-NFILES=5
+#NFILES=5
 # njobs=98
-SAMPLENAME=mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune
-RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.txt
-TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_nueintrinsics.txt
-MCFLAG="-mc"
+#SAMPLENAME=mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune
+#RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune.txt
+#TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_nueintrinsics.txt
+#MCFLAG="-mc"
 
 # mcc9_v29e_dl_run1_C1_extbnb : run 1 EXTBNB
 #NFILES=100
@@ -61,6 +61,16 @@ MCFLAG="-mc"
 #RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune.txt
 #TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_bnb5e19.txt
 #MCFLAG=""
+
+# mcc9_v28_wctagger_run3_bnb1e19: run 1 BNB nue intrinsics overlay
+# 490 good reco files
+NFILES=10
+njobs=2515
+SAMPLENAME=mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod
+RECOFILELIST=${LMRECO_DIR}/goodoutput_lists/goodoutput_list_mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod.txt
+TRUTHFILELIST=${LMRECO_DIR}/filelists/filelist_mcc9_v28_wctagger_run3_bnb1e19.txt
+MCFLAG="run3bnb1e19"
+
 
 #RECOFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge_filelist.txt
 #TRUTHFILELIST=/cluster/tufts/wongjiradlabnu/mrosen25/filelists/mcc9_v29e_dl_run3b_bnb_nu_overlay_nocrtremerge_filelist.txt
@@ -103,10 +113,10 @@ MCFLAG="-mc"
 #SAMPLENAME="mcc9_v28_wctagger_bnb5e19"
 
 
-OUTTAG=v3dev_reco_retune
+#OUTTAG=v3dev_reco_retune
+OUTTAG=v2_me_06_03_prod
 BINDING=/cluster/tufts/wongjiradlabnu:/cluster/tufts/wongjiradlabnu,/cluster/tufts/wongjiradlab:/cluster/tufts/wongjiradlab
 
-#module load singularity/3.5.3
 module load apptainer/1.2.4-suid
 
-apptainer exec --bind ${BINDING} ${CONTAINER} bash -c "cd ${REPO_DIR} && ./tufts_run_flash_prediction.sh ${RECOFILELIST} ${TRUTHFILELIST} ${SAMPLENAME} ${NFILES} ${MCFLAG}"
+apptainer exec --bind ${BINDING} ${CONTAINER} bash -c "cd ${REPO_DIR} && source tufts_run_flash_prediction.sh ${RECOFILELIST} ${TRUTHFILELIST} ${SAMPLENAME} ${NFILES} ${MCFLAG}"

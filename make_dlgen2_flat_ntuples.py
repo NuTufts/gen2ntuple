@@ -399,6 +399,7 @@ if args.isMC:
   
 recoNuE = array('f', [0.])
 foundVertex = array('i', [0])
+vtxIndex = array('i', [0])
 vtxX = array('f', [0.])
 vtxY = array('f', [0.])
 vtxZ = array('f', [0.])
@@ -570,6 +571,7 @@ if args.isMC:
   
 eventTree.Branch("recoNuE", recoNuE, 'recoNuE/F')
 eventTree.Branch("foundVertex", foundVertex, 'foundVertex/I')
+eventTree.Branch("vtxIndex", vtxIndex, 'vtxIndex/I')
 eventTree.Branch("vtxX", vtxX, 'vtxX/F')
 eventTree.Branch("vtxY", vtxY, 'vtxY/F')
 eventTree.Branch("vtxZ", vtxZ, 'vtxZ/F')
@@ -975,6 +977,7 @@ for filepair in files:
         nKeypoints[0] += 1
 
     foundVertex[0] = 0
+    vtxIndex[0] = -1
     vtxScore[0] = -1.
     vtxKPtype[0] = -1
     vtxKPscore[0] = 0.0
@@ -992,29 +995,30 @@ for filepair in files:
     #foundVertex[0], vtxScore[0], vtxIndex = highest_kprank_with_visenergy( nuvetoed_v=kpst.nuvetoed_v,
     #                                                                       nuselvar_v=kpst.nu_sel_v,
     #                                                                       min_num_showers=1)
-    foundVertex[0], vtxScore[0], vtxIndex = select_nu_vertex( selector="highest_intime_reco_frac",
-                                                              kwargs={"nuvetoed_v":kpst.nuvetoed_v,
-                                                                      "nuselvar_v":kpst.nu_sel_v,
-                                                                      "prioritize_by_keypoint":True} )
-    
-    
-    print("select_nu_vertex returns: foundVertex[0]=",foundVertex[0]," vtxIndex=",vtxIndex," score=",vtxScore[0])
-    nvertices = kpst.nuvetoed_v.size()
-    ivtx_max_intime_sum = -1
-    max_intime_sum = 0.0
-    for ivtx in range(nvertices):
-      intime_pixelsum = get_nucandidate_intime_charge( kpst.nuvetoed_v.at(ivtx),
-                                                       wireplane_images_v,
-                                                       cosmictagged_pixels_v )
-      if intime_pixelsum>max_intime_sum:
-        max_intime_sum = intime_pixelsum
-        ivtx_max_intime_sum = ivtx
-        
-    vtxMaxIntimePixelSum[0] = max_intime_sum
-    print("vtxMaxIntimePixelSum: ",max_intime_sum)
 
-    if vtxIndex>=0:
-      vertex = kpst.nuvetoed_v.at(vtxIndex)
+    # Set Vertex selection to UBooNE production style    
+    foundVertex[0], vtxScore[0], vtxIndex[0] = select_nu_vertex( selector="highest_nu_keypoint_score",
+                                                                 kwargs={"nuvetoed_v":kpst.nuvetoed_v,
+                                                                         "nuselvar_v":kpst.nu_sel_v,
+                                                                         "prioritize_by_keypoint":True} )
+    
+    
+    print("select_nu_vertex returns: foundVertex[0]=",foundVertex[0]," vtxIndex=",vtxIndex[0]," score=",vtxScore[0])
+    nvertices = kpst.nuvetoed_v.size()
+
+    # Get intime sum
+    if foundVertex[0]==1 and vtxIndex[0]>=0:
+      intime_pixelsum = get_nucandidate_intime_charge( kpst.nuvetoed_v.at(vtxIndex[0]),
+                                                       wireplane_images_v,
+                                                       cosmictagged_pixels_v )        
+      vtxMaxIntimePixelSum[0] = intime_pixelsum
+    else:
+      vtxMaxIntimePixelSum[0] = -999.0      
+      
+    print("vtxMaxIntimePixelSum: ",vtxMaxIntimePixelSum[0])
+
+    if vtxIndex[0]>=0:
+      vertex = kpst.nuvetoed_v.at(vtxIndex[0])
       vtxKPtype[0] = vertex.keypoint_type
       vtxKPscore[0] = vertex.netScore
     else:
@@ -1025,6 +1029,7 @@ for filepair in files:
       vtxX[0] = -999.
       vtxY[0] = -999.
       vtxZ[0] = -999.
+      vtxIndex[0] = -1
       vtxIsFiducial[0] = -1
       vtxContainment[0] = -1
       if args.isMC:
@@ -1078,14 +1083,18 @@ for filepair in files:
     wcoverlapvars.analyze(vertex, nusel, iolcv)
     vtxFracHitsOnCosmic[0] = nusel.frac_allhits_on_cosmic
     for p in range(3):
-      fracRecoOuttimePixels[p] = 0.
-      fracUnrecoIntimePixels[p] = 0.
-    if kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v.size()>=3:
-      for p in range(3):
-        fracUnrecoIntimePixels[p] = kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v[p]
-      if  kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v.size()>=6:
+      fracRecoOuttimePixels[p]  = -1.0
+      fracUnrecoIntimePixels[p] = -1.0
+
+    if vtxIndex[0]>=0 and vtxIndex[0]<kpst.nu_sel_v.size():
+      if kpst.nu_sel_v.at(vtxIndex[0]).unreco_fraction_v.size()>=3:
+        for p in range(3):
+          fracUnrecoIntimePixels[p] = kpst.nu_sel_v.at(vtxIndex[0]).unreco_fraction_v[p]
+      if  kpst.nu_sel_v.at(vtxIndex[0]).unreco_fraction_v.size()>=6:
         for p in range(3,6):
-          fracRecoOuttimePixels[p-3] = kpst.nu_sel_v.at(vtxIndex).unreco_fraction_v[p]
+          fracRecoOuttimePixels[p-3] = kpst.nu_sel_v.at(vtxIndex[0]).unreco_fraction_v[p]
+    else:
+      print("Unable to fill fracUnrecoIntimePixels and fracRecoOuttimePixels found in kpst.nu_sel_v")
 
     nTracks[0] = vertex.track_v.size()
     if nTracks[0]>=maxNTrks:

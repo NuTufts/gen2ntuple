@@ -24,7 +24,7 @@ def highest_nu_keypoint_score(nuvetoed_v=None):
     vtxindex = -1
     nvertices = nuvetoed_v.size()
     for ivtx in range(nvertices):
-        vtx = kpst.nuvetoed_v.at(ivtx)
+        vtx = nuvetoed_v.at(ivtx)
         if vtx.keypoint_type != 0:
             continue
         foundVertex = 1
@@ -152,7 +152,7 @@ def highest_intime_reco_frac( nuvetoed_v, nuselvar_v, prioritize_by_keypoint=Tru
 
 def select_nu_vertex(selector='highest_nu_keypoint_score', kwargs={}):
     if selector=='highest_nu_keypoint_score':
-        return highest_nu_keypoint_score(**kwargs)
+        return highest_nu_keypoint_score(nuvetoed_v=kwargs['nuvetoed_v'])
     elif selector=="highest_kprank_with_visenergy":
         return highest_kprank_with_visenergy(**kwargs)
     elif selector=="highest_intime_reco_frac":

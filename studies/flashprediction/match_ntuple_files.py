@@ -4,11 +4,12 @@ import ROOT as rt
 #samplename="mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune"
 #samplename="mcc9_v29e_dl_run1_C1_extbnb_v3dev_reco_retune"
 #samplename="mcc9_v28_wctagger_bnb5e19_v3dev_reco_retune"
-samplename="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+#samplename="mcc9_v28_wctagger_nueintrinsics_v3dev_reco_retune"
+samplename="mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod"
 
 #ntuple_goodlist="../../output_goodlist_mcc9_v28_wctagger_bnboverlay_v3dev_reco_retune.txt"
-#ntuple_goodlist=f"../../output_goodlist_{samplename}.txt"
-ntuple_goodlist=f"../../{samplename}_test_complete.txt"
+ntuple_goodlist=f"../../output_goodlist_{samplename}.txt"
+#ntuple_goodlist=f"../../{samplename}_test_complete.txt"
 
 ntuplefile = open(ntuple_goodlist,'r')
 lines = ntuplefile.readlines()
@@ -29,7 +30,8 @@ for ll in lines:
     fileid = int(ll.split("_")[-1].split(".")[0])
     print(ll,": ",fileid)
 
-    gen2_tfile = rt.TFile("./../../"+ll)
+    gen2_ntuple = "./../../"+ll
+    gen2_tfile = rt.TFile(gen2_ntuple)
     gen2_ttree = gen2_tfile.Get("EventTree")
     nentries_gen2 = gen2_ttree.GetEntries()
     
@@ -66,11 +68,15 @@ for ll in lines:
             continue
         
     
-    matching_files.append( ntuple_subfile )
+    matching_files.append( (ntuple_subfile,gen2_ntuple) )
 
-flist_matching = open(f"matching_flashpred_{samplename}.txt",'w')
-for f in matching_files:
-    print(f,file=flist_matching)
-flist_matching.close()
+flist_matching_flashpred = open(f"matching_flashpred_{samplename}.txt",'w')
+flist_matching_ntuple    = open(f"matching_ntuple_{samplename}.txt",'w')
+for fflash,fntuple in matching_files:
+    print(fflash,file=flist_matching_flashpred)
+    print(fntuple,file=flist_matching_ntuple)
+flist_matching_flashpred.close()
+flist_matching_ntuple.close()
 
 os.system(f"hadd -f flashprediction_{samplename}.root @matching_flashpred_{samplename}.txt")
+os.system(f"hadd -f ntuple_{samplename}.root @matching_ntuple_{samplename}.txt")
