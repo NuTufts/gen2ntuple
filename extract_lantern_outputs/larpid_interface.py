@@ -33,7 +33,6 @@ def run_larpid( nuvtx, iolcv, model ):
         goodTrack = nTrajPoints > 1 and trackLength > 1e-6
 
         if goodTrack:
-            skip = False
             cropPt = nuvtx.track_v[iTrk].End()
             print(" track loop[",iTrk,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)
             prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,thrumu_v,trackCls,cropPt,10.,512,512)
@@ -51,7 +50,8 @@ def run_larpid( nuvtx, iolcv, model ):
                 #trackPiScore[iTrk] = prongCNN_out[0][0][3].item()
                 larpid_output[('track',iTrk)] = {'larpid_img':prongImage_np}
         else:
-            larpid_output[('track',iTrk)] = {}
+            #larpid_output[('track',iTrk)] = {}
+            pass
 
     for iShw in range(nshowers):
         shower = nuvtx.shower_v.at(iShw)
