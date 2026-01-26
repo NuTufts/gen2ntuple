@@ -1,7 +1,14 @@
 import os,sys
 import ROOT as rt
+from larcv import larcv
+from larflow import larflow
+#import hdf5 as h5
+
+# larpid code
+# ./../../photon_analysis/prongCNN/models/
 
 from filelists import get_filelist
+from larpid_interface import run_larpid
 
 def get_selected_event_info_fromrootfile( selection_rootfile ):
     """
@@ -43,6 +50,40 @@ def get_selected_event_info_fromrootfile( selection_rootfile ):
     print(f"Number of events in the selection root file: {len(event_list)}")
     return event_list
 
+def extract_spacepoints( nuvtx ):
+    ntracks  = nuvtx.track_v.size()
+    iprong = 0
+    prong_spacepoints = []
+    for iTrk in range(ntracks):
+        trackCls = nuvtx.track_hitcluster_v.at(iTrk)
+        nhits = trackCls.size()
+        hitarray = np.zeros( (nhits,5) )
+        for ihit in range(trackCls.size()):
+            hit = trackCls.at(ihit)
+            hitarray[ihit,3] = iprong
+            hitarray[ihit,4] = 0
+            for i in range(3):
+                hitarray[ihit,i] = hit[i]
+        prong_spacepoints.append(hitarray)
+        iprong += 1
+        
+    for iShw in range(nshowers):
+        shower = nuvtx.shower_v.at(iShw)
+        nhits  = shower.size()
+        hitarray = np.zeros( (nhits,5) )
+        for ihit in range(shower.size()):
+            hit = shower.at(ihit)
+            hitarray[ihit,3] = iprong
+            hitarray[ihit,4] = 1
+            for i in range(3):
+                hitarray[ihit,i] = hit[i]
+        prong_spacepoints.append(hitarray)
+        iprong += 1
+
+    spacepoints = np.concatenate( prong_spacepoints, axis=0 )
+    return spacepoints
+    
+
 def extract_event_info( event_info, iolcv_path, iolarlite_path, kpsreco_path ):
     """
     We extract info for visualization/study.
@@ -61,23 +102,60 @@ def extract_event_info( event_info, iolcv_path, iolarlite_path, kpsreco_path ):
     event = event_info['event']
     vtxIdx = event_info['vtxIdx']
 
+    model = None
+
+    iolcv = larcv.IOManager(larcv.IOManager.kREAD,'larcv',larcv.IOManager.kTickBackward)
+    iolcv.add_in_file( iolcv_path )
+    iolcv.reverse_all_products()
+    iolcv.initialize()
+
     # Get the nu reco object.
     rfile_reco = rt.TFile( kpsreco_path, 'read' )
-    #rfile_reco.Get()
-
     recotree = rfile_reco.Get("KPSRecoManagerTree")
     nentries = recotree.GetEntries()
     found  = False
+    larpid_output = None
     for ientry in range(nentries):
         recotree.GetEntry(ientry)
         if run!=recotree.run or subrun!=recotree.subrun or event!=recotree.event:
             continue
+        iolcv.read_entry(ientry)
+        
         nuvertices = recotree.nuvetoed_v.size()
         if nuvertices<=vtxIdx:
             raise ValueError(f"Number of vertices in this event ({nvertices}) is less than target vertex index ({vtxIdx})")
         nuvtx = recotree.nuvetoed_v.at(vtxIdx)
         found = True
         print(f"Found vertex index: {vtxIdx}")
+
+        vtx_imgcol  = [ nuvtx.col_v.at(i) for i in range(3) ]
+        vtx_imgrow  = nuvtx.row
+        vtx_imgtick = nuvtx.tick
+
+        larpid_output = run_larpid( nuvtx, iolcv, model )
+        for k,vdict in larpid_output.items():
+            if 'larpid_img' in vdict:
+                print(k,": ",vdict['larpid_img'].shape)
+
+        # extract 3D points
+        prong_spacepoints = extract_spacepoints( nuvtx )
+
+        # save as root histograms
+        rootfile = f"selected_event_{fileid}_{run}_{subrun}_{event}_{vtxIdx}.root"
+        outroot = rt.TFile(rootfile,'recreate')
+        for k,vdict in larpid_output.items():
+            prongtype,prongindex = k
+            if 'larpid_img' in vdict:
+                prongimages = vdict['larpid_img']
+                for ii in range(prongimages.shape[0]):
+                    #print(k,": ",vdict['larpid_img'].shape)
+                    h2d = rt.TH2D(f"h{prongtype}_{prongindex}_{ii}","",512,0,512,512,0,512)
+                    for ix in range(512):
+                        for iy in range(512):
+                            h2d.SetBinContent(ix+1,iy+1,prongimages[ii,iy,ix])
+                    h2d.Write()
+        outroot.Close()
+        
         
         if True:
             break
