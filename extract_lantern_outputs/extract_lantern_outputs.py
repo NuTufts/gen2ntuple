@@ -1,4 +1,5 @@
 import os,sys
+import gc
 import numpy as np
 import h5py
 import ROOT as rt
@@ -285,12 +286,22 @@ def extract_event_info( event_info, iolcv_path, iolarlite_path, kpsreco_path,
                 trackinfo_array, showerinfo_array, ntracks, nshowers
             )
             print(f"Wrote event data to HDF5 group: {event_group_name}")
-        
-        
+
+        # Clear references to large objects
+        larpid_output = None
+        prong_spacepoints = None
+
         if True:
             break
-        
+
+    # Clean up ROOT files and IOManager
     rfile_reco.Close()
+    ntuple_rfile.Close()
+    iolcv.finalize()
+
+    # Force garbage collection to free memory
+    gc.collect()
+
     return found
 
 if __name__=="__main__":
@@ -341,6 +352,19 @@ if __name__=="__main__":
 
             if found:
                 nevents_processed += 1
+
+                # Flush HDF5 periodically to free memory buffers
+                if nevents_processed % 5 == 0:
+                    h5file.flush()
+                    gc.collect()
+                    # Print memory usage for debugging
+                    try:
+                        import resource
+                        mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                        print(f"[Memory] After {nevents_processed} events: {mem_mb:.1f} MB")
+                    except:
+                        pass
+
                 if args.max_events > 0 and nevents_processed >= args.max_events:
                     print(f"Reached max events limit: {args.max_events}")
                     break

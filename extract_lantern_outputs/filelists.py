@@ -9,7 +9,6 @@ KPSRECO_DIR = {
 }
 
 NTUPLE_FILES = {
-#    "run3_opendata_1e19":"/cluster/tufts/wongjiradlabnu/nutufts/data/ntuples/ntuple_mcc9_v28_wctagger_run3_bnb1e19_v2_me_06_03_prod.root"
     "run3_opendata_1e19":"/cluster/tufts/wongjiradlabnu/twongj01/gen2/gen2ntuple/out_test/dlgen2_reco_v2me06_ntuple_v7_mcc9_v28_wctagger_run3_bnb1e19.root"
 }
 

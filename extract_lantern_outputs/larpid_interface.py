@@ -1,4 +1,5 @@
 import os
+import gc
 from larcv import larcv
 from larflow import larflow
 import torch
@@ -57,7 +58,7 @@ def run_larpid( nuvtx, iolcv, model ):
         shower = nuvtx.shower_v.at(iShw)
         num_shower_hits = shower.size()
         cropPt = nuvtx.shower_trunk_v[iShw].Vertex()
-        print(" shower loop[",iShw,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)        
+        print(" shower loop[",iShw,"] calling make_cropped_initial_sparse_prong_image_reco(...)",flush=True)
         prong_vv = flowTriples.make_cropped_initial_sparse_prong_image_reco(adc_v,mod_thrumu_v,shower,cropPt,10.,512,512)
         with torch.no_grad():
             print("   make prong image: ",prong_vv.size(),flush=True)
@@ -65,5 +66,14 @@ def run_larpid( nuvtx, iolcv, model ):
             prongImage_np = makeImage(prong_vv)
             print("   run prongCNN on shower image",flush=True)
             larpid_output[('shower',iShw)] = {'larpid_img':prongImage_np}
-            
+
+    # Clean up large intermediate objects
+    del flowTriples
+    del mod_thrumu_v
+    del adc_v
+    del thrumu_v
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
     return larpid_output
